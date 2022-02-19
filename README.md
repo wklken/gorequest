@@ -30,12 +30,13 @@ $ go get github.com/wklken/gorequest
 ```
 
 ## Documentation
-See [Go Doc](http://godoc.org/github.com/wklken/gorequest) or [Go Walker](http://gowalker.org/github.com/wklken/gorequest) for usage and details.
+
+See [Go Doc](http://godoc.org/github.com/wklken/gorequest) for usage and details.
 
 ## Status
 
-[![Drone Build Status](https://drone.io/github.com/jmcvetta/restclient/status.png)](https://drone.io/github.com/parnurzeal/gorequest/latest)
-[![Travis Build Status](https://travis-ci.org/parnurzeal/gorequest.svg?branch=master)](https://travis-ci.org/parnurzeal/gorequest)
+[![Drone Build Status](https://drone.io/github.com/jmcvetta/restclient/status.png)](https://drone.io/github.com/wklken/gorequest/latest)
+[![Travis Build Status](https://travis-ci.org/wklken/gorequest.svg?branch=master)](https://travis-ci.org/wklken/gorequest)
 
 ## Why should you use GoRequest?
 
@@ -311,6 +312,33 @@ baseRequest.Timeout(10 * time.Millisecond).
 resp, body, errs := baseRequest.Clone().Get("http://exmaple.com/").End()
 ```
 
+## Mock
+
+You can mock the response of gorequest via [gock](https://github.com/h2non/gock)
+
+```go
+func TestMock(t *testing.T) {
+	defer gock.Off()
+
+	gock.New("http://foo.com").
+		Get("/bar").
+		Reply(200).
+		JSON(map[string]string{"foo": "bar"})
+
+	resp, body, errs := New().Mock().Get("http://foo.com/bar").SetDebug(true).End()
+	if len(errs) != 0 {
+		t.Fatalf("Expected no error, got error")
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("Expected status code 200, got %d", resp.StatusCode)
+	}
+
+	if strings.Trim(body, " \n") != `{"foo":"bar"}` {
+		t.Fatalf("Expected body `{\"foo\":\"bar\"}`, got `%s`", body)
+	}
+}
+```
+
 ## Debug
 
 For debugging, GoRequest leverages `httputil` to dump details of every request/response. (Thanks to @dafang)
@@ -357,9 +385,10 @@ Thanks to all contributors thus far:
 | https://github.com/xild               |
 | https://github.com/yangmls            |
 | https://github.com/6david9            |
+| https://github.com/wklken             |
 
 
-Also, co-maintainer is needed here. If anyone is interested, please email me (parnurzeal at gmail.com)
+Also, co-maintainer is needed here. If anyone is interested, please email me (wklken at gmail.com)
 
 ## Credits
 
