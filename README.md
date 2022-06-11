@@ -21,6 +21,7 @@ Sending request has never been as fun nor easier than this. It comes with lots o
 * Cookie - setting cookies for your request
 * CookieJar - automatic in-memory cookiejar
 * BasicAuth - setting basic authentication header
+* Build with other json libs: `go-json`(-tags=go_json)/`jsoniter`(-tags=jsoniter)
 * more to come..
 
 ## Installation
