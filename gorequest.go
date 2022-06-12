@@ -63,13 +63,16 @@ type SuperAgent struct {
 
 var DisableTransportSwap = false
 
-// New used to create a new SuperAgent object.
-func New() *SuperAgent {
+func newHttpClient() *http.Client {
 	cookiejarOptions := cookiejar.Options{
 		PublicSuffixList: publicsuffix.List,
 	}
 	jar, _ := cookiejar.New(&cookiejarOptions)
+	return &http.Client{Jar: jar}
+}
 
+// New used to create a new SuperAgent object.
+func New() *SuperAgent {
 	debug := os.Getenv("GOREQUEST_DEBUG") == "1"
 
 	s := &SuperAgent{
@@ -82,7 +85,7 @@ func New() *SuperAgent {
 		QueryData:         url.Values{},
 		FileData:          make([]File, 0),
 		BounceToRawString: false,
-		Client:            &http.Client{Jar: jar},
+		Client:            newHttpClient(),
 		Transport:         &http.Transport{},
 		Cookies:           make([]*http.Cookie, 0),
 		Errors:            nil,
