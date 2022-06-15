@@ -4,7 +4,9 @@ package gorequest
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"crypto/tls"
+	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,6 +14,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptrace"
 	"net/http/httputil"
 	"net/textproto"
 	"net/url"
@@ -21,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cast"
+	"github.com/wklken/gorequest/internal/json"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/h2non/gock.v1"
 	"moul.io/http2curl"
@@ -57,6 +62,7 @@ type SuperAgent struct {
 	DoNotClearSuperAgent bool
 	isClone              bool
 	ctx                  context.Context
+	trace                *httptrace.ClientTrace
 	Stats                Stats
 	isMock               bool
 }
@@ -95,6 +101,7 @@ func New() *SuperAgent {
 		logger:            log.New(os.Stderr, "[gorequest]", log.LstdFlags),
 		isClone:           false,
 		ctx:               nil,
+		trace:             nil,
 		Stats:             Stats{},
 		isMock:            false,
 	}
@@ -138,6 +145,7 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		DoNotClearSuperAgent: true,
 		isClone:              true,
 		ctx:                  s.ctx,
+		trace:                s.trace,
 		Stats:                copyStats(s.Stats),
 		isMock:               s.isMock,
 	}
@@ -146,6 +154,11 @@ func (s *SuperAgent) Clone() *SuperAgent {
 
 func (s *SuperAgent) Context(ctx context.Context) *SuperAgent {
 	s.ctx = ctx
+	return s
+}
+
+func (s *SuperAgent) HttpTrace(trace *httptrace.ClientTrace) *SuperAgent {
+	s.trace = trace
 	return s
 }
 
@@ -374,7 +387,7 @@ func (s *SuperAgent) queryStruct(content interface{}) *SuperAgent {
 					queryVal = strconv.FormatFloat(t, 'f', -1, 64)
 				case time.Time:
 					queryVal = t.Format(time.RFC3339)
-				case json.Number:
+				case stdjson.Number:
 					queryVal = string(t)
 				default:
 					j, err := json.Marshal(v)
@@ -586,6 +599,7 @@ func (s *SuperAgent) SendString(content string) *SuperAgent {
 	s.RawString += content
 	return s
 }
+
 
 // End is the most important function that you need to call when ending the chain. The request won't proceed without calling it.
 // End function returns Response which matches the structure of Response type in Golang's http package (but without Body data). The body data itself returns as a string in a 2nd return value.
@@ -936,6 +950,10 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 
 	if s.ctx != nil {
 		req = req.WithContext(s.ctx)
+	}
+	if s.trace != nil {
+		clientTraceCtx := httptrace.WithClientTrace(req.Context(), s.trace)
+		req = req.WithContext(clientTraceCtx)
 	}
 
 	for k, values := range s.Header {
