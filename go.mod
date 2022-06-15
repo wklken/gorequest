@@ -7,7 +7,7 @@ require (
 	github.com/goccy/go-json v0.9.7
 	github.com/json-iterator/go v1.1.12
 	github.com/smartystreets/goconvey v1.7.2 // indirect
-	github.com/spf13/cast v1.4.1
+	github.com/spf13/cast v1.5.0
 	golang.org/x/net v0.0.0-20211216030914-fe4d6282115f
 	gopkg.in/h2non/gock.v1 v1.1.2
 	moul.io/http2curl v1.0.0
