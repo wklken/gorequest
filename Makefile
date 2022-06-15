@@ -35,3 +35,8 @@ lint:
 .PHONY: test
 test:
 	$(GO) test -mod=vendor . -covermode=count -coverprofile .coverage.cov
+
+.PHONY: testjsonlibs
+testjsonlibs:
+	$(GO) test -mod=vendor . -covermode=count -coverprofile .coverage.cov -tags=jsoniter
+	$(GO) test -mod=vendor . -covermode=count -coverprofile .coverage.cov -tags=go_json

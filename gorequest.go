@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
+	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/spf13/cast"
+	"github.com/wklken/gorequest/internal/json"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/h2non/gock.v1"
 	"moul.io/http2curl"
@@ -542,7 +543,7 @@ func (s *SuperAgent) queryStruct(content interface{}) *SuperAgent {
 					queryVal = strconv.FormatFloat(t, 'f', -1, 64)
 				case time.Time:
 					queryVal = t.Format(time.RFC3339)
-				case json.Number:
+				case stdjson.Number:
 					queryVal = string(t)
 				default:
 					j, err := json.Marshal(v)
@@ -1043,7 +1044,7 @@ func changeMapToURLValues(data map[string]interface{}) url.Values {
 		// json.Number used to protect against a wrong (for GoRequest) default conversion
 		// which always converts number to float64.
 		// This type is caused by using Decoder.UseNumber()
-		case json.Number:
+		case stdjson.Number:
 			newUrlValues.Add(k, val.String())
 		case int:
 			newUrlValues.Add(k, strconv.FormatInt(int64(val), 10))
@@ -1089,9 +1090,9 @@ func changeMapToURLValues(data map[string]interface{}) url.Values {
 				for _, element := range val {
 					newUrlValues.Add(k, strconv.FormatBool(element.(bool)))
 				}
-			case json.Number:
+			case stdjson.Number:
 				for _, element := range val {
-					newUrlValues.Add(k, element.(json.Number).String())
+					newUrlValues.Add(k, element.(stdjson.Number).String())
 				}
 			}
 		default:
