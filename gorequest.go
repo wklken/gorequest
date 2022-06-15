@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptrace"
 	"net/http/httputil"
 	"net/textproto"
 	"net/url"
@@ -71,6 +72,7 @@ type SuperAgent struct {
 	DoNotClearSuperAgent bool
 	isClone              bool
 	ctx                  context.Context
+	trace                *httptrace.ClientTrace
 	Stats                Stats
 	isMock               bool
 }
@@ -106,6 +108,7 @@ func New() *SuperAgent {
 		logger:            log.New(os.Stderr, "[gorequest]", log.LstdFlags),
 		isClone:           false,
 		ctx:               nil,
+		trace:             nil,
 		Stats:             Stats{},
 		isMock:            false,
 	}
@@ -149,6 +152,7 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		DoNotClearSuperAgent: true,
 		isClone:              true,
 		ctx:                  s.ctx,
+		trace:                s.trace,
 		Stats:                copyStats(s.Stats),
 		isMock:               s.isMock,
 	}
@@ -157,6 +161,11 @@ func (s *SuperAgent) Clone() *SuperAgent {
 
 func (s *SuperAgent) Context(ctx context.Context) *SuperAgent {
 	s.ctx = ctx
+	return s
+}
+
+func (s *SuperAgent) HttpTrace(trace *httptrace.ClientTrace) *SuperAgent {
+	s.trace = trace
 	return s
 }
 
@@ -1461,6 +1470,10 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 
 	if s.ctx != nil {
 		req = req.WithContext(s.ctx)
+	}
+	if s.trace != nil {
+		clientTraceCtx := httptrace.WithClientTrace(req.Context(), s.trace)
+		req = req.WithContext(clientTraceCtx)
 	}
 
 	for k, vals := range s.Header {
