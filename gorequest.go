@@ -4,9 +4,7 @@ package gorequest
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	stdjson "encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -24,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cast"
 	"github.com/wklken/gorequest/internal/json"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/h2non/gock.v1"
@@ -599,7 +596,6 @@ func (s *SuperAgent) SendString(content string) *SuperAgent {
 	s.RawString += content
 	return s
 }
-
 
 // End is the most important function that you need to call when ending the chain. The request won't proceed without calling it.
 // End function returns Response which matches the structure of Response type in Golang's http package (but without Body data). The body data itself returns as a string in a 2nd return value.
