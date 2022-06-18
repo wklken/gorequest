@@ -13,3 +13,12 @@ func (s *SuperAgent) AddCookies(cookies []*http.Cookie) *SuperAgent {
 	s.Cookies = append(s.Cookies, cookies...)
 	return s
 }
+
+func shallowCopyCookies(old []*http.Cookie) []*http.Cookie {
+	if old == nil {
+		return nil
+	}
+	newData := make([]*http.Cookie, len(old))
+	copy(newData, old)
+	return newData
+}

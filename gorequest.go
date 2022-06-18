@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptrace"
-	"net/http/httputil"
 	"net/textproto"
 	"net/url"
 	"os"
@@ -24,8 +23,6 @@ import (
 
 	"github.com/wklken/gorequest/internal/json"
 	"golang.org/x/net/publicsuffix"
-	"gopkg.in/h2non/gock.v1"
-	"moul.io/http2curl"
 )
 
 type (
@@ -151,24 +148,6 @@ func (s *SuperAgent) Clone() *SuperAgent {
 
 func (s *SuperAgent) Context(ctx context.Context) *SuperAgent {
 	s.ctx = ctx
-	return s
-}
-
-func (s *SuperAgent) HttpTrace(trace *httptrace.ClientTrace) *SuperAgent {
-	s.trace = trace
-	return s
-}
-
-// Mock will enable gock, http mocking for net/http
-func (s *SuperAgent) Mock() *SuperAgent {
-	gock.InterceptClient(s.Client)
-	s.isMock = true
-	return s
-}
-
-// SetDebug enable the debug mode which logs request/response detail.
-func (s *SuperAgent) SetDebug(enable bool) *SuperAgent {
-	s.Debug = enable
 	return s
 }
 
@@ -730,26 +709,10 @@ func (s *SuperAgent) getResponseBytes() (Response, []byte, []error) {
 	}
 
 	// Log details of this request
-	if s.Debug {
-		dump, err := httputil.DumpRequest(req, true)
-		s.logger.SetPrefix("[http] ")
-		if err != nil {
-			s.logger.Println("Error:", err)
-		} else {
-			s.logger.Printf("HTTP Request: %s", BytesToString(dump))
-		}
-	}
+	s.debuggingRequest(req)
 
 	// Display CURL command line
-	if s.CurlCommand {
-		curl, err := http2curl.GetCurlCommand(req)
-		s.logger.SetPrefix("[curl] ")
-		if err != nil {
-			s.logger.Println("Error:", err)
-		} else {
-			s.logger.Printf("CURL command line: %s", curl)
-		}
-	}
+	s.logCurlCommand(req)
 
 	startTime := time.Now()
 	// stats collect the requestBytes
@@ -767,14 +730,7 @@ func (s *SuperAgent) getResponseBytes() (Response, []byte, []error) {
 	s.Stats.RequestDuration = time.Since(startTime)
 
 	// Log details of this response
-	if s.Debug {
-		dump, err := httputil.DumpResponse(resp, true)
-		if nil != err {
-			s.logger.Println("Error:", err)
-		} else {
-			s.logger.Printf("HTTP Response: %s", BytesToString(dump))
-		}
-	}
+	s.debuggingResponse(resp)
 
 	body, err := ioutil.ReadAll(resp.Body)
 	// Reset resp.Body so it can be use again

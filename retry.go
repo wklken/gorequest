@@ -56,3 +56,13 @@ func (s *SuperAgent) shouldRetry(resp Response, hasError bool) bool {
 	}
 	return false
 }
+
+// just need to change the array pointer?
+func copyRetryable(old superAgentRetryable) superAgentRetryable {
+	newRetryable := old
+	newRetryable.RetryStatus = make([]int, len(old.RetryStatus))
+	for i := range old.RetryStatus {
+		newRetryable.RetryStatus[i] = old.RetryStatus[i]
+	}
+	return newRetryable
+}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"net/textproto"
 	"net/url"
 	"reflect"
@@ -25,26 +24,11 @@ func cloneMapArray(old map[string][]string) map[string][]string {
 	return newMap
 }
 
-// just need to change the array pointer?
-func copyRetryable(old superAgentRetryable) superAgentRetryable {
-	newRetryable := old
-	newRetryable.RetryStatus = make([]int, len(old.RetryStatus))
-	for i := range old.RetryStatus {
-		newRetryable.RetryStatus[i] = old.RetryStatus[i]
-	}
-	return newRetryable
-}
-
-func copyStats(old Stats) Stats {
-	newStats := old
-	return newStats
-}
-
 func shallowCopyData(old map[string]interface{}) map[string]interface{} {
 	if old == nil {
 		return nil
 	}
-	newData := make(map[string]interface{})
+	newData := make(map[string]interface{}, len(old))
 	for k, val := range old {
 		newData[k] = val
 	}
@@ -65,15 +49,6 @@ func shallowCopyFileArray(old []File) []File {
 		return nil
 	}
 	newData := make([]File, len(old))
-	copy(newData, old)
-	return newData
-}
-
-func shallowCopyCookies(old []*http.Cookie) []*http.Cookie {
-	if old == nil {
-		return nil
-	}
-	newData := make([]*http.Cookie, len(old))
 	copy(newData, old)
 	return newData
 }
