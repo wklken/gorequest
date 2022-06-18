@@ -8,3 +8,8 @@ type Stats struct {
 
 	RequestDuration time.Duration
 }
+
+func copyStats(old Stats) Stats {
+	newStats := old
+	return newStats
+}
