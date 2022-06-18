@@ -184,6 +184,13 @@ func (s *SuperAgent) DisableCompression() *SuperAgent {
 	return s
 }
 
+func (s *SuperAgent) DisableRedirect() *SuperAgent {
+	s.Client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return s
+}
+
 // ClearSuperAgent clear SuperAgent data for another new request.
 func (s *SuperAgent) ClearSuperAgent() {
 	if s.DoNotClearSuperAgent {
