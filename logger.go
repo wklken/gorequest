@@ -2,8 +2,8 @@ package gorequest
 
 type Logger interface {
 	SetPrefix(string)
-	Printf(format string, v ...interface{})
-	Println(v ...interface{})
+	Printf(format string, v ...any)
+	Println(v ...any)
 }
 
 // SetLogger set the logger which is the default logger to the SuperAgent instance.

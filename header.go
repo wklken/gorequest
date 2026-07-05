@@ -30,7 +30,7 @@ func (s *SuperAgent) Set(param string, value string) *SuperAgent {
 //	  Post("apiEndPoint").
 //	  Set(headers).
 //	  End()
-func (s *SuperAgent) SetHeaders(headers interface{}) *SuperAgent {
+func (s *SuperAgent) SetHeaders(headers any) *SuperAgent {
 	switch v := reflect.ValueOf(headers); v.Kind() {
 	case reflect.Struct:
 		s.setHeadersStruct(v.Interface())
@@ -42,17 +42,17 @@ func (s *SuperAgent) SetHeaders(headers interface{}) *SuperAgent {
 	return s
 }
 
-func (s *SuperAgent) setHeadersMap(content interface{}) *SuperAgent {
+func (s *SuperAgent) setHeadersMap(content any) *SuperAgent {
 	return s.setHeadersStruct(content)
 }
 
-// SendStruct (similar to SendString) returns SuperAgent's itself for any next chain and takes content interface{} as a parameter.
-// Its duty is to transform interface{} (implicitly always a struct) into s.Data (map[string]interface{}) which later changes into appropriate format such as json, form, text, etc. in the End() func.
-func (s *SuperAgent) setHeadersStruct(content interface{}) *SuperAgent {
+// SendStruct (similar to SendString) returns SuperAgent's itself for any next chain and takes content any as a parameter.
+// Its duty is to transform any (implicitly always a struct) into s.Data (map[string]any) which later changes into appropriate format such as json, form, text, etc. in the End() func.
+func (s *SuperAgent) setHeadersStruct(content any) *SuperAgent {
 	if marshalContent, err := json.Marshal(content); err != nil {
 		s.Errors = append(s.Errors, err)
 	} else {
-		var val map[string]interface{}
+		var val map[string]any
 		d := json.NewDecoder(bytes.NewBuffer(marshalContent))
 		d.UseNumber()
 		if err := d.Decode(&val); err != nil {
