@@ -3,7 +3,7 @@ package gorequest
 import (
 	"net/http"
 
-	"moul.io/http2curl"
+	"moul.io/http2curl/v2"
 )
 
 // SetCurlCommand enable the curlcommand mode which display a CURL command line.
