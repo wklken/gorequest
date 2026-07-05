@@ -1994,6 +1994,26 @@ func TestQueryPreservesRawQueryOrder(t *testing.T) {
 	}
 }
 
+func TestQueryAcceptsStructPointer(t *testing.T) {
+	type queryPayload struct {
+		Query string `json:"query"`
+		Count int64  `json:"count"`
+	}
+	payload := &queryPayload{Query: "value", Count: 6673221165400540161}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("query") != "value" {
+			t.Fatalf("Expected query=value, got %q", r.URL.RawQuery)
+		}
+		if r.URL.Query().Get("count") != "6673221165400540161" {
+			t.Fatalf("Expected count to preserve int64 precision, got %q", r.URL.RawQuery)
+		}
+	}))
+	defer ts.Close()
+
+	New().Get(ts.URL).Query(payload).End()
+}
+
 // TODO: more tests on redirect
 func TestRedirectPolicyFunc(t *testing.T) {
 	redirectSuccess := false

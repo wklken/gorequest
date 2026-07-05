@@ -345,6 +345,12 @@ func (s *SuperAgent) Query(content interface{}) *SuperAgent {
 		s.queryStruct(v.Interface())
 	case reflect.Map:
 		s.queryMap(v.Interface())
+	case reflect.Ptr:
+		if v.IsNil() {
+			s.Errors = append(s.Errors, fmt.Errorf("query func: nil pointer"))
+		} else {
+			s.Query(v.Elem().Interface())
+		}
 	default:
 	}
 	return s
