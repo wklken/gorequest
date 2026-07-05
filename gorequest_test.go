@@ -1964,6 +1964,39 @@ func TestRedirectPolicyFunc(t *testing.T) {
 	}
 }
 
+func TestRedirectStripsCustomAuthHeadersOnCrossHost(t *testing.T) {
+	var targetAPIKey string
+	var targetTrace string
+	tsRedirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetAPIKey = r.Header.Get("API-Key")
+		targetTrace = r.Header.Get("X-Trace")
+	}))
+	defer tsRedirect.Close()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, tsRedirect.URL, http.StatusFound)
+	}))
+	defer ts.Close()
+
+	resp, _, errs := New().
+		Get(ts.URL).
+		Set("API-Key", "secret").
+		Set("X-Trace", "trace-id").
+		End()
+	if len(errs) > 0 {
+		t.Fatalf("Unexpected redirect errors: %s", errs)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected redirected response status 200, got %d", resp.StatusCode)
+	}
+	if targetAPIKey != "" {
+		t.Fatalf("Expected API-Key to be stripped on cross-host redirect, got %q", targetAPIKey)
+	}
+	if targetTrace != "trace-id" {
+		t.Fatalf("Expected non-sensitive header to be preserved, got %q", targetTrace)
+	}
+}
+
 func TestEndBytes(t *testing.T) {
 	serverOutput := "hello world"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

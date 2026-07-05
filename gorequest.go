@@ -65,7 +65,10 @@ func newHttpClient() *http.Client {
 		PublicSuffixList: publicsuffix.List,
 	}
 	jar, _ := cookiejar.New(&cookiejarOptions)
-	return &http.Client{Jar: jar}
+	return &http.Client{
+		Jar:           jar,
+		CheckRedirect: defaultRedirectPolicy,
+	}
 }
 
 // New used to create a new SuperAgent object.
