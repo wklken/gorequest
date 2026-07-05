@@ -3,7 +3,6 @@ package gorequest
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -27,9 +26,9 @@ type File struct {
 //	  SendFile("./example_file.ext").
 //	  End()
 //
-// File can also be a []byte slice of a already file read by eg. ioutil.ReadFile:
+// File can also be a []byte slice of a already file read by eg. os.ReadFile:
 //
-//	b, _ := ioutil.ReadFile("./example_file.ext")
+//	b, _ := os.ReadFile("./example_file.ext")
 //	gorequest.New().
 //	  Post("http://example.com").
 //	  Type("multipart").
@@ -48,7 +47,7 @@ type File struct {
 // The first optional argument (second argument overall) is the filename, which will be automatically determined when file is a string (path) or a os.File.
 // When file is a []byte slice, filename defaults to "filename". In all cases the automatically determined filename can be overwritten:
 //
-//	b, _ := ioutil.ReadFile("./example_file.ext")
+//	b, _ := os.ReadFile("./example_file.ext")
 //	gorequest.New().
 //	  Post("http://example.com").
 //	  Type("multipart").
@@ -59,7 +58,7 @@ type File struct {
 // So if you send multiple files, the fieldnames will be file1, file2, ... unless it is overwritten. If fieldname is set to "file" it will be automatically set to fileNUMBER, where number is the greatest existing number+1 unless
 // a third argument skipFileNumbering is provided and true.
 //
-//	b, _ := ioutil.ReadFile("./example_file.ext")
+//	b, _ := os.ReadFile("./example_file.ext")
 //	gorequest.New().
 //	  Post("http://example.com").
 //	  Type("multipart").
@@ -70,7 +69,7 @@ type File struct {
 // if fieldname is "file" and skipFileNumbering is set to "false", the fieldname will be automatically set to
 // fileNUMBER, where number is the greatest existing number+1.
 //
-//	b, _ := ioutil.ReadFile("./example_file.ext")
+//	b, _ := os.ReadFile("./example_file.ext")
 //	gorequest.New().
 //	  Post("http://example.com").
 //	  Type("multipart").
@@ -79,13 +78,13 @@ type File struct {
 //
 // The fourth optional argument (fifth argument overall) is the mimetype request form-data part. It defaults to "application/octet-stream".
 //
-//	b, _ := ioutil.ReadFile("./example_file.ext")
+//	b, _ := os.ReadFile("./example_file.ext")
 //	gorequest.New().
 //	  Post("http://example.com").
 //	  Type("multipart").
 //	  SendFile(b, "filename", "my_custom_fieldname", false, "mime_type").
 //	  End()
-func (s *SuperAgent) SendFile(file interface{}, args ...interface{}) *SuperAgent {
+func (s *SuperAgent) SendFile(file any, args ...any) *SuperAgent {
 
 	filename := ""
 	fieldname := "file"
@@ -138,7 +137,7 @@ func (s *SuperAgent) SendFile(file interface{}, args ...interface{}) *SuperAgent
 		if filename == "" {
 			filename = filepath.Base(pathToFile)
 		}
-		data, err := ioutil.ReadFile(v.String())
+		data, err := os.ReadFile(v.String())
 		if err != nil {
 			s.Errors = append(s.Errors, err)
 			return s
@@ -164,7 +163,7 @@ func (s *SuperAgent) SendFile(file interface{}, args ...interface{}) *SuperAgent
 			f.Data[i] = slice[i].(byte)
 		}
 		s.FileData = append(s.FileData, f)
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if len(args) == 1 {
 			return s.SendFile(v.Elem().Interface(), args[0])
 		}
@@ -184,7 +183,7 @@ func (s *SuperAgent) SendFile(file interface{}, args ...interface{}) *SuperAgent
 			if filename == "" {
 				filename = filepath.Base(osfile.Name())
 			}
-			data, err := ioutil.ReadFile(osfile.Name())
+			data, err := os.ReadFile(osfile.Name())
 			if err != nil {
 				s.Errors = append(s.Errors, err)
 				return s

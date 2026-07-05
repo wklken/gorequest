@@ -285,7 +285,7 @@ func TestQuerySendAndURLValueConversions(t *testing.T) {
 			Active: true,
 			Nested: map[string]string{"k": "v"},
 		}).
-		Query(map[string]interface{}{"map": "value"}).
+		Query(map[string]any{"map": "value"}).
 		Query("%zz")
 
 	if agent.QueryData.Get("json") != "yes" {
@@ -305,13 +305,13 @@ func TestQuerySendAndURLValueConversions(t *testing.T) {
 	}
 
 	sendAgent := New().
-		Send(map[string]interface{}{"name": "gorequest"}).
+		Send(map[string]any{"name": "gorequest"}).
 		Send([]int{1, 2}).
 		Send(complex64(1 + 2i))
 	if sendAgent.Data["name"] != "gorequest" {
 		t.Fatalf("Expected Send(map) to fill Data, got %v", sendAgent.Data)
 	}
-	if !reflect.DeepEqual(sendAgent.SliceData, []interface{}{1, 2}) {
+	if !reflect.DeepEqual(sendAgent.SliceData, []any{1, 2}) {
 		t.Fatalf("Expected Send(slice) to fill SliceData, got %v", sendAgent.SliceData)
 	}
 
@@ -320,21 +320,21 @@ func TestQuerySendAndURLValueConversions(t *testing.T) {
 		t.Fatalf("Expected duplicate form values to be preserved, got %v", got)
 	}
 
-	values := changeMapToURLValues(map[string]interface{}{
+	values := changeMapToURLValues(map[string]any{
 		"float32": []float32{1.5, 2.5},
-		"strings": []interface{}{
+		"strings": []any{
 			"one",
 			"two",
 		},
-		"bools": []interface{}{
+		"bools": []any{
 			true,
 			false,
 		},
-		"numbers": []interface{}{
+		"numbers": []any{
 			json.Number("9"),
 			json.Number("10"),
 		},
-		"empty": []interface{}{},
+		"empty": []any{},
 	})
 	if got := values["float32"]; !reflect.DeepEqual(got, []string{"1.5", "2.5"}) {
 		t.Fatalf("Expected float32 values, got %v", got)

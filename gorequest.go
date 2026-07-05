@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -34,8 +33,8 @@ type SuperAgent struct {
 	Header               http.Header
 	TargetType           string
 	ForceType            string
-	Data                 map[string]interface{}
-	SliceData            []interface{}
+	Data                 map[string]any
+	SliceData            []any
 	FormData             url.Values
 	QueryData            url.Values
 	FileData             []File
@@ -74,10 +73,10 @@ func New() *SuperAgent {
 
 	s := &SuperAgent{
 		TargetType:        TypeJSON,
-		Data:              make(map[string]interface{}),
+		Data:              make(map[string]any),
 		Header:            http.Header{},
 		RawString:         "",
-		SliceData:         []interface{}{},
+		SliceData:         []any{},
 		FormData:          url.Values{},
 		QueryData:         url.Values{},
 		FileData:          make([]File, 0),
@@ -168,8 +167,8 @@ func (s *SuperAgent) ClearSuperAgent() {
 	s.Url = ""
 	s.Method = ""
 	s.Header = http.Header{}
-	s.Data = make(map[string]interface{})
-	s.SliceData = []interface{}{}
+	s.Data = make(map[string]any)
+	s.SliceData = []any{}
 	s.FormData = url.Values{}
 	s.QueryData = url.Values{}
 	s.FileData = make([]File, 0)
@@ -325,7 +324,7 @@ func (s *SuperAgent) Type(typeStr string) *SuperAgent {
 //	  Query("query=bicycle").
 //	  Query(`{ size: '50x50', weight:'20kg' }`).
 //	  End()
-func (s *SuperAgent) Query(content interface{}) *SuperAgent {
+func (s *SuperAgent) Query(content any) *SuperAgent {
 	switch v := reflect.ValueOf(content); v.Kind() {
 	case reflect.String:
 		s.queryString(v.String())
@@ -338,11 +337,11 @@ func (s *SuperAgent) Query(content interface{}) *SuperAgent {
 	return s
 }
 
-func (s *SuperAgent) queryStruct(content interface{}) *SuperAgent {
+func (s *SuperAgent) queryStruct(content any) *SuperAgent {
 	if marshalContent, err := json.Marshal(content); err != nil {
 		s.Errors = append(s.Errors, err)
 	} else {
-		var val map[string]interface{}
+		var val map[string]any
 		d := json.NewDecoder(bytes.NewBuffer(marshalContent))
 		d.UseNumber()
 		if err := d.Decode(&val); err != nil {
@@ -395,7 +394,7 @@ func (s *SuperAgent) queryString(content string) *SuperAgent {
 	return s
 }
 
-func (s *SuperAgent) queryMap(content interface{}) *SuperAgent {
+func (s *SuperAgent) queryMap(content any) *SuperAgent {
 	return s.queryStruct(content)
 }
 
@@ -451,7 +450,7 @@ func (s *SuperAgent) Param(key string, value string) *SuperAgent {
 //	  Type("text").
 //	  Send("hello world").
 //	  End()
-func (s *SuperAgent) Send(content interface{}) *SuperAgent {
+func (s *SuperAgent) Send(content any) *SuperAgent {
 	// TODO: add normal text mode or other mode to Send func
 	switch v := reflect.ValueOf(content); v.Kind() {
 	case reflect.String:
@@ -472,7 +471,7 @@ func (s *SuperAgent) Send(content interface{}) *SuperAgent {
 		s.SendSlice(makeSliceOfReflectValue(v))
 	case reflect.Array:
 		s.SendSlice(makeSliceOfReflectValue(v))
-	case reflect.Ptr:
+	case reflect.Pointer:
 		s.Send(v.Elem().Interface())
 	case reflect.Map:
 		s.SendMap(v.Interface())
@@ -483,24 +482,24 @@ func (s *SuperAgent) Send(content interface{}) *SuperAgent {
 	return s
 }
 
-// SendSlice (similar to SendString) returns SuperAgent's itself for any next chain and takes content []interface{} as a parameter.
-// Its duty is to append slice of interface{} into s.SliceData ([]interface{}) which later changes into json array in the End() func.
-func (s *SuperAgent) SendSlice(content []interface{}) *SuperAgent {
+// SendSlice (similar to SendString) returns SuperAgent's itself for any next chain and takes content []any as a parameter.
+// Its duty is to append slice of any into s.SliceData ([]any) which later changes into json array in the End() func.
+func (s *SuperAgent) SendSlice(content []any) *SuperAgent {
 	s.SliceData = append(s.SliceData, content...)
 	return s
 }
 
-func (s *SuperAgent) SendMap(content interface{}) *SuperAgent {
+func (s *SuperAgent) SendMap(content any) *SuperAgent {
 	return s.SendStruct(content)
 }
 
-// SendStruct (similar to SendString) returns SuperAgent's itself for any next chain and takes content interface{} as a parameter.
-// Its duty is to transform interface{} (implicitly always a struct) into s.Data (map[string]interface{}) which later changes into appropriate format such as json, form, text, etc. in the End() func.
-func (s *SuperAgent) SendStruct(content interface{}) *SuperAgent {
+// SendStruct (similar to SendString) returns SuperAgent's itself for any next chain and takes content any as a parameter.
+// Its duty is to transform any (implicitly always a struct) into s.Data (map[string]any) which later changes into appropriate format such as json, form, text, etc. in the End() func.
+func (s *SuperAgent) SendStruct(content any) *SuperAgent {
 	if marshalContent, err := json.Marshal(content); err != nil {
 		s.Errors = append(s.Errors, err)
 	} else {
-		var val map[string]interface{}
+		var val map[string]any
 		d := json.NewDecoder(bytes.NewBuffer(marshalContent))
 		d.UseNumber()
 		if err := d.Decode(&val); err != nil {
@@ -515,17 +514,17 @@ func (s *SuperAgent) SendStruct(content interface{}) *SuperAgent {
 }
 
 // SendString returns SuperAgent's itself for any next chain and takes content string as a parameter.
-// Its duty is to transform String into s.Data (map[string]interface{}) which later changes into appropriate format such as json, form, text, etc. in the End func.
+// Its duty is to transform String into s.Data (map[string]any) which later changes into appropriate format such as json, form, text, etc. in the End func.
 // Send implicitly uses SendString and you should use Send instead of this.
 func (s *SuperAgent) SendString(content string) *SuperAgent {
 	if !s.BounceToRawString {
-		var val interface{}
+		var val any
 		d := json.NewDecoder(strings.NewReader(content))
 		d.UseNumber()
 		if err := d.Decode(&val); err == nil {
 			switch v := reflect.ValueOf(val); v.Kind() {
 			case reflect.Map:
-				for k, v := range val.(map[string]interface{}) {
+				for k, v := range val.(map[string]any) {
 					s.Data[k] = v
 				}
 				// NOTE: if SendString(`{}`), will come into this case, but set nothing into s.Data
@@ -534,7 +533,7 @@ func (s *SuperAgent) SendString(content string) *SuperAgent {
 				}
 			// add to SliceData
 			case reflect.Slice:
-				s.SendSlice(val.([]interface{}))
+				s.SendSlice(val.([]any))
 			// bounce to rawstring if it is arrayjson, or others
 			default:
 				s.BounceToRawString = true
@@ -624,7 +623,7 @@ func (s *SuperAgent) EndBytes(callback ...func(response Response, body []byte, e
 }
 
 // EndStruct should be used when you want the body as a struct. The callbacks work the same way as with `End`, except that a struct is used instead of a string.
-func (s *SuperAgent) EndStruct(v interface{}, callback ...func(response Response, v interface{}, body []byte, errs []error)) (Response, []byte, []error) {
+func (s *SuperAgent) EndStruct(v any, callback ...func(response Response, v any, body []byte, errs []error)) (Response, []byte, []error) {
 	resp, body, errs := s.EndBytes()
 	if errs != nil {
 		return nil, body, errs
@@ -695,9 +694,9 @@ func (s *SuperAgent) getResponseBytes() (Response, []byte, []error) {
 	// Log details of this response
 	s.debuggingResponse(resp)
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	// Reset resp.Body so it can be use again
-	resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+	resp.Body = io.NopCloser(bytes.NewBuffer(body))
 	if err != nil {
 		return nil, nil, []error{err}
 	}

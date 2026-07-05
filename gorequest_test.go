@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -114,7 +114,7 @@ func TestTypesMap(t *testing.T) {
 // Test for changeMapToURLValues
 func TestChangeMapToURLValues(t *testing.T) {
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"s":  "a string",
 		"i":  42,
 		"bt": true,
@@ -634,7 +634,7 @@ func TestResetBody(t *testing.T) {
 	defer ts.Close()
 
 	resp, _, _ := New().Get(ts.URL).End()
-	bodyBytes, _ := ioutil.ReadAll(resp.Body)
+	bodyBytes, _ := io.ReadAll(resp.Body)
 	if string(bodyBytes) != "Just some text" {
 		t.Error("Expected to be able to reuse the response body")
 	}
@@ -715,7 +715,7 @@ func testPostServer(t *testing.T) *httptest.Server {
 		case test_post_case3_send_json:
 			t.Logf("case %v ", test_post_case3_send_json)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != `{"query1":"test","query2":"test"}` {
 				t.Error(`Expected Body with {"query1":"test","query2":"test"}`, "| but got", string(body))
 			}
@@ -725,14 +725,14 @@ func testPostServer(t *testing.T) *httptest.Server {
 				t.Error("Expected Header Content-Type -> application/x-www-form-urlencoded", "| but got", r.Header.Get("Content-Type"))
 			}
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != "query1=test&query2=test" {
 				t.Error("Expected Body with \"query1=test&query2=test\"", "| but got", string(body))
 			}
 		case test_post_case5_integration_send_json_string:
 			t.Logf("case %v ", test_post_case5_integration_send_json_string)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != "query1=test&query2=test" {
 				t.Error("Expected Body with \"query1=test&query2=test\"", "| but got", string(body))
 			}
@@ -748,7 +748,7 @@ func testPostServer(t *testing.T) *httptest.Server {
 		case test_post_case7_integration_send_json_struct:
 			t.Logf("case %v ", test_post_case7_integration_send_json_struct)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			comparedBody := []byte(`{"Lower":{"Color":"green","Size":1.7},"Upper":{"Color":"red","Size":0},"a":"a","name":"Cindy"}`)
 			if !bytes.Equal(body, comparedBody) {
 				t.Errorf(`Expected correct json but got ` + string(body))
@@ -756,21 +756,21 @@ func testPostServer(t *testing.T) *httptest.Server {
 		case test_post_case8_send_json_with_long_id_number:
 			t.Logf("case %v ", test_post_case8_send_json_with_long_id_number)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != `{"id":123456789,"name":"nemo"}` {
 				t.Error(`Expected Body with {"id":123456789,"name":"nemo"}`, "| but got", string(body))
 			}
 		case test_post_case9_send_json_string_with_long_id_number_as_form_result:
 			t.Logf("case %v ", test_post_case9_send_json_string_with_long_id_number_as_form_result)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != `id=123456789&name=nemo` {
 				t.Error(`Expected Body with "id=123456789&name=nemo"`, `| but got`, string(body))
 			}
 		case test_post_case19_send_struct, test_post_case10_send_struct_pointer:
 			t.Logf("case %v ", r.URL.Path)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			comparedBody := []byte(`{"Bfalse":false,"BoolArray":[true,false],"Btrue":true,"Float":12.345,"FloatArray":[1.23,4.56,7.89],"Int":42,"IntArray":[1,2],"String":"a string","StringArray":["string1","string2"]}`)
 			if !bytes.Equal(body, comparedBody) {
 				t.Errorf(`Expected correct json but got ` + string(body))
@@ -778,7 +778,7 @@ func testPostServer(t *testing.T) *httptest.Server {
 		case test_post_case12_send_slice_string, test_post_case13_send_slice_string_pointer, test_post_case17_send_string_array, test_post_case18_send_string_array_pointer:
 			t.Logf("case %v ", r.URL.Path)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			comparedBody := []byte(`["string1","string2"]`)
 			if !bytes.Equal(body, comparedBody) {
 				t.Errorf(`Expected correct json but got ` + string(body))
@@ -786,35 +786,35 @@ func testPostServer(t *testing.T) *httptest.Server {
 		case test_post_case14_send_int_pointer:
 			t.Logf("case %v ", test_post_case14_send_int_pointer)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != "42" {
 				t.Error("Expected Body with \"42\"", "| but got", string(body))
 			}
 		case test_post_case15_send_float_pointer:
 			t.Logf("case %v ", test_post_case15_send_float_pointer)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != "12.345" {
 				t.Error("Expected Body with \"12.345\"", "| but got", string(body))
 			}
 		case test_post_case16_send_bool_pointer:
 			t.Logf("case %v ", test_post_case16_send_bool_pointer)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != "true" {
 				t.Error("Expected Body with \"true\"", "| but got", string(body))
 			}
 		case test_post_case20_send_byte_char, test_post_case21_send_byte_char_pointer, test_post_case22_send_byte_int, test_post_case22_send_byte_int_pointer:
 			t.Logf("case %v ", r.URL.Path)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != "71" {
 				t.Error("Expected Body with \"71\"", "| but got", string(body))
 			}
 		case test_post_case23_send_duplicate_query_params:
 			t.Logf("case %v ", test_post_case23_send_duplicate_query_params)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			sbody := string(body)
 			if sbody != "param=4&param=3&param=2&param=1" {
 				t.Error("Expected Body \"param=4&param=3&param=2&param=1\"", "| but got", sbody)
@@ -829,7 +829,7 @@ func testPostServer(t *testing.T) *httptest.Server {
 		case test_post_case24_send_query_and_request_body:
 			t.Logf("case %v ", test_post_case24_send_query_and_request_body)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			sbody := string(body)
 			if sbody != `{"name":"jkbbwr"}` {
 				t.Error(`Expected Body "{"name":"jkbbwr"}"`, "| but got", sbody)
@@ -1175,7 +1175,7 @@ func checkFile(t *testing.T, fileheader *multipart.FileHeader) {
 		t.Error(err)
 	}
 	defer infile.Close()
-	b, err := ioutil.ReadAll(infile)
+	b, err := io.ReadAll(infile)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1684,7 +1684,7 @@ func TestMultipartRequest(t *testing.T) {
 		SendFile(fileByPath, "MY_LICENSE", "my_fieldname", false, "application/json").
 		End()
 
-	b, _ := ioutil.ReadFile("./LICENSE")
+	b, _ := os.ReadFile("./LICENSE")
 	New().Post(ts.URL + case13_send_file_by_content_without_name).
 		Type("multipart").
 		SendFile(b).
@@ -1807,7 +1807,7 @@ func TestPatch(t *testing.T) {
 		case case3_send_json:
 			t.Logf("case %v ", case3_send_json)
 			defer r.Body.Close()
-			body, _ := ioutil.ReadAll(r.Body)
+			body, _ := io.ReadAll(r.Body)
 			if string(body) != `{"query1":"test","query2":"test"}` {
 				t.Error(`Expected Body with {"query1":"test","query2":"test"}`, "| but got", string(body))
 			}
@@ -1925,7 +1925,7 @@ func TestQueryFunc(t *testing.T) {
 		End()
 
 	New().Post(ts.URL + case4_send_map).
-		Query(map[string]interface{}{
+		Query(map[string]any{
 			"query1": "test1",
 			"query2": "test2",
 			"int64":  6673221165400540161,
@@ -2026,7 +2026,7 @@ func TestEndStruct(t *testing.T) {
 
 	// Callback.
 	{
-		resp, bodyBytes, errs := New().Get(ts.URL).EndStruct(func(resp Response, v interface{}, body []byte, errs []error) {
+		resp, bodyBytes, errs := New().Get(ts.URL).EndStruct(func(resp Response, v any, body []byte, errs []error) {
 			if len(errs) > 0 {
 				t.Fatalf("Unexpected errors: %s", errs)
 			}
@@ -2435,7 +2435,7 @@ func TestXml(t *testing.T) {
 		}
 
 		defer r.Body.Close()
-		body, _ := ioutil.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
 		if string(body) != xml {
 			t.Error(`Expected XML `, xml, "| but got", string(body))
 		}
@@ -2470,7 +2470,7 @@ func TestPlainText(t *testing.T) {
 		}
 
 		defer r.Body.Close()
-		body, _ := ioutil.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
 		if string(body) != text {
 			t.Error(`Expected text `, text, "| but got", string(body))
 		}
@@ -2564,7 +2564,7 @@ func TestAcceptMultipleTypes(t *testing.T) {
 		}
 
 		defer r.Body.Close()
-		body, _ := ioutil.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
 		if string(body) != text {
 			t.Error(`Expected text `, text, "| but got", string(body))
 		}
@@ -2660,7 +2660,7 @@ func TestSetHeaders(t *testing.T) {
 		}
 
 		defer r.Body.Close()
-		body, _ := ioutil.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
 		if string(body) != text {
 			t.Error(`Expected text `, text, "| but got", string(body))
 		}
