@@ -4,28 +4,23 @@ package gorequest
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptrace"
 	"net/textproto"
 	"net/url"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/spf13/cast"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -50,7 +45,7 @@ type SuperAgent struct {
 	Transport            *http.Transport
 	Cookies              []*http.Cookie
 	Errors               []error
-	BasicAuth            struct{ Username, Password string }
+	BasicAuth            basicAuth
 	Debug                bool
 	CurlCommand          bool
 	logger               Logger
@@ -65,13 +60,16 @@ type SuperAgent struct {
 
 var DisableTransportSwap = false
 
-// New used to create a new SuperAgent object.
-func New() *SuperAgent {
+func newHttpClient() *http.Client {
 	cookiejarOptions := cookiejar.Options{
 		PublicSuffixList: publicsuffix.List,
 	}
 	jar, _ := cookiejar.New(&cookiejarOptions)
+	return &http.Client{Jar: jar}
+}
 
+// New used to create a new SuperAgent object.
+func New() *SuperAgent {
 	debug := os.Getenv("GOREQUEST_DEBUG") == "1"
 
 	s := &SuperAgent{
@@ -84,11 +82,11 @@ func New() *SuperAgent {
 		QueryData:         url.Values{},
 		FileData:          make([]File, 0),
 		BounceToRawString: false,
-		Client:            &http.Client{Jar: jar},
+		Client:            newHttpClient(),
 		Transport:         &http.Transport{},
 		Cookies:           make([]*http.Cookie, 0),
 		Errors:            nil,
-		BasicAuth:         struct{ Username, Password string }{},
+		BasicAuth:         basicAuth{},
 		Debug:             debug,
 		CurlCommand:       false,
 		logger:            log.New(os.Stderr, "[gorequest]", log.LstdFlags),
@@ -153,12 +151,6 @@ func (s *SuperAgent) Context(ctx context.Context) *SuperAgent {
 // SetDoNotClearSuperAgent enable the DoNotClear mode for not clearing super agent and reuse for the next request.
 func (s *SuperAgent) SetDoNotClearSuperAgent(enable bool) *SuperAgent {
 	s.DoNotClearSuperAgent = enable
-	return s
-}
-
-// SetLogger set the logger which is the default logger to the SuperAgent instance.
-func (s *SuperAgent) SetLogger(logger Logger) *SuperAgent {
-	s.logger = logger
 	return s
 }
 
@@ -271,108 +263,6 @@ func (s *SuperAgent) Options(targetUrl string) *SuperAgent {
 	s.Method = OPTIONS
 	s.Url = targetUrl
 	s.Errors = nil
-	return s
-}
-
-// Set is used for setting header fields,
-// this will overwrite the existed values of Header through AppendHeader().
-// Example. To set `Accept` as `application/json`
-//
-//	gorequest.New().
-//	  Post("https://httpbin.org/post").
-//	  Set("Accept", "application/json").
-//	  End()
-func (s *SuperAgent) Set(param string, value string) *SuperAgent {
-	s.Header.Set(param, value)
-	return s
-}
-
-// SetHeaders is used for setting all your headers with the use of a map or a struct.
-// It uses AppendHeader() method so it allows for multiple values of the same header
-// Example. To set the following struct as headers, simply do
-//
-//	headers := apiHeaders{Accept: "application/json", Content-Type: "text/html", X-Frame-Options: "deny"}
-//	gorequest.New().
-//	  Post("apiEndPoint").
-//	  Set(headers).
-//	  End()
-func (s *SuperAgent) SetHeaders(headers interface{}) *SuperAgent {
-	switch v := reflect.ValueOf(headers); v.Kind() {
-	case reflect.Struct:
-		s.setHeadersStruct(v.Interface())
-	case reflect.Map:
-		s.setHeadersMap(v.Interface())
-	default:
-		return s
-	}
-	return s
-}
-
-func (s *SuperAgent) setHeadersMap(content interface{}) *SuperAgent {
-	return s.setHeadersStruct(content)
-}
-
-// SendStruct (similar to SendString) returns SuperAgent's itself for any next chain and takes content interface{} as a parameter.
-// Its duty is to transform interface{} (implicitly always a struct) into s.Data (map[string]interface{}) which later changes into appropriate format such as json, form, text, etc. in the End() func.
-func (s *SuperAgent) setHeadersStruct(content interface{}) *SuperAgent {
-	if marshalContent, err := json.Marshal(content); err != nil {
-		s.Errors = append(s.Errors, err)
-	} else {
-		var val map[string]interface{}
-		d := json.NewDecoder(bytes.NewBuffer(marshalContent))
-		d.UseNumber()
-		if err := d.Decode(&val); err != nil {
-			s.Errors = append(s.Errors, err)
-		} else {
-			for k, v := range val {
-				strValue, err := cast.ToStringE(v)
-				if err != nil {
-					// TODO: log err?
-					continue
-				}
-
-				s.AppendHeader(k, strValue)
-			}
-
-		}
-	}
-	return s
-}
-
-// AppendHeader is used for setting headers with multiple values,
-// Example. To set `Accept` as `application/json, text/plain`
-//
-//	gorequest.New().
-//	  Post("https://httpbin.org/post").
-//	  AppendHeader("Accept", "application/json").
-//	  AppendHeader("Accept", "text/plain").
-//	  End()
-func (s *SuperAgent) AppendHeader(param string, value string) *SuperAgent {
-	s.Header.Add(param, value)
-	return s
-}
-
-// UserAgent is used for setting User-Agent into headers
-// Example. To set `User-Agent` as `Custom user agent`
-//
-//	gorequest.New().
-//	  Post("https://httpbin.org/post").
-//	  UserAgent("Custom user agent").
-//	  End()
-func (s *SuperAgent) UserAgent(ua string) *SuperAgent {
-	s.Header.Add("User-Agent", ua)
-	return s
-}
-
-// SetBasicAuth sets the basic authentication header
-// Example. To set the header for username "myuser" and password "mypass"
-//
-//	gorequest.New()
-//	  Post("https://httpbin.org/post").
-//	  SetBasicAuth("myuser", "mypass").
-//	  End()
-func (s *SuperAgent) SetBasicAuth(username string, password string) *SuperAgent {
-	s.BasicAuth = struct{ Username, Password string }{username, password}
 	return s
 }
 
@@ -517,47 +407,6 @@ func (s *SuperAgent) Param(key string, value string) *SuperAgent {
 	return s
 }
 
-// TLSClientConfig set TLSClientConfig for underling Transport.
-// One example is you can use it to disable security check (https):
-//
-//	gorequest.New().TLSClientConfig(&tls.Config{ InsecureSkipVerify: true}).
-//	  Get("https://disable-security-check.com").
-//	  End()
-func (s *SuperAgent) TLSClientConfig(config *tls.Config) *SuperAgent {
-	s.safeModifyTransport()
-	s.Transport.TLSClientConfig = config
-	return s
-}
-
-// Proxy function accepts a proxy url string to setup proxy url for any request.
-// It provides a convenience way to setup proxy which have advantages over usual old ways.
-// One example is you might try to set `http_proxy` environment. This means you are setting proxy up for all the requests.
-// You will not be able to send different request with different proxy unless you change your `http_proxy` environment again.
-// Another example is using Golang proxy setting. This is normal prefer way to do but too verbase compared to GoRequest's Proxy:
-//
-//	gorequest.New().Proxy("http://myproxy:9999").
-//	  Post("http://www.google.com").
-//	  End()
-//
-// To set no_proxy, just put empty string to Proxy func:
-//
-//	gorequest.New().Proxy("").
-//	  Post("http://www.google.com").
-//	  End()
-func (s *SuperAgent) Proxy(proxyUrl string) *SuperAgent {
-	parsedProxyUrl, err := url.Parse(proxyUrl)
-	if err != nil {
-		s.Errors = append(s.Errors, err)
-	} else if proxyUrl == "" {
-		s.safeModifyTransport()
-		s.Transport.Proxy = nil
-	} else {
-		s.safeModifyTransport()
-		s.Transport.Proxy = http.ProxyURL(parsedProxyUrl)
-	}
-	return s
-}
-
 // Send function accepts either json string or query strings which is usually used to assign data to POST or PUT method.
 // Without specifying any type, if you give Send with json data, you are doing requesting in json format:
 //
@@ -632,21 +481,6 @@ func (s *SuperAgent) Send(content interface{}) *SuperAgent {
 		return s
 	}
 	return s
-}
-
-func makeSliceOfReflectValue(v reflect.Value) (slice []interface{}) {
-
-	kind := v.Kind()
-	if kind != reflect.Slice && kind != reflect.Array {
-		return slice
-	}
-
-	slice = make([]interface{}, v.Len())
-	for i := 0; i < v.Len(); i++ {
-		slice[i] = v.Index(i).Interface()
-	}
-
-	return slice
 }
 
 // SendSlice (similar to SendString) returns SuperAgent's itself for any next chain and takes content []interface{} as a parameter.
@@ -734,269 +568,6 @@ func (s *SuperAgent) SendString(content string) *SuperAgent {
 	// Dump all contents to RawString in case in the end user doesn't want json or form.
 	s.RawString += content
 	return s
-}
-
-type File struct {
-	Filename  string
-	Fieldname string
-	MimeType  string
-	Data      []byte
-}
-
-// SendFile function works only with type "multipart". The function accepts one mandatory and up to three optional arguments. The mandatory (first) argument is the file.
-// The function accepts a path to a file as string:
-//
-//	gorequest.New().
-//	  Post("http://example.com").
-//	  Type("multipart").
-//	  SendFile("./example_file.ext").
-//	  End()
-//
-// File can also be a []byte slice of a already file read by eg. ioutil.ReadFile:
-//
-//	b, _ := ioutil.ReadFile("./example_file.ext")
-//	gorequest.New().
-//	  Post("http://example.com").
-//	  Type("multipart").
-//	  SendFile(b).
-//	  End()
-//
-// Furthermore file can also be a os.File:
-//
-//	f, _ := os.Open("./example_file.ext")
-//	gorequest.New().
-//	  Post("http://example.com").
-//	  Type("multipart").
-//	  SendFile(f).
-//	  End()
-//
-// The first optional argument (second argument overall) is the filename, which will be automatically determined when file is a string (path) or a os.File.
-// When file is a []byte slice, filename defaults to "filename". In all cases the automatically determined filename can be overwritten:
-//
-//	b, _ := ioutil.ReadFile("./example_file.ext")
-//	gorequest.New().
-//	  Post("http://example.com").
-//	  Type("multipart").
-//	  SendFile(b, "my_custom_filename").
-//	  End()
-//
-// The second optional argument (third argument overall) is the fieldname in the multipart/form-data request. It defaults to fileNUMBER (eg. file1), where number is ascending and starts counting at 1.
-// So if you send multiple files, the fieldnames will be file1, file2, ... unless it is overwritten. If fieldname is set to "file" it will be automatically set to fileNUMBER, where number is the greatest existing number+1 unless
-// a third argument skipFileNumbering is provided and true.
-//
-//	b, _ := ioutil.ReadFile("./example_file.ext")
-//	gorequest.New().
-//	  Post("http://example.com").
-//	  Type("multipart").
-//	  SendFile(b, "", "my_custom_fieldname"). // filename left blank, will become "example_file.ext"
-//	  End()
-//
-// The third optional argument (fourth argument overall) is a bool value skipFileNumbering. It defaults to "false",
-// if fieldname is "file" and skipFileNumbering is set to "false", the fieldname will be automatically set to
-// fileNUMBER, where number is the greatest existing number+1.
-//
-//	b, _ := ioutil.ReadFile("./example_file.ext")
-//	gorequest.New().
-//	  Post("http://example.com").
-//	  Type("multipart").
-//	  SendFile(b, "filename", "my_custom_fieldname", false).
-//	  End()
-//
-// The fourth optional argument (fifth argument overall) is the mimetype request form-data part. It defaults to "application/octet-stream".
-//
-//	b, _ := ioutil.ReadFile("./example_file.ext")
-//	gorequest.New().
-//	  Post("http://example.com").
-//	  Type("multipart").
-//	  SendFile(b, "filename", "my_custom_fieldname", false, "mime_type").
-//	  End()
-func (s *SuperAgent) SendFile(file interface{}, args ...interface{}) *SuperAgent {
-
-	filename := ""
-	fieldname := "file"
-	skipFileNumbering := false
-	fileType := "application/octet-stream"
-
-	if len(args) >= 1 {
-		argFilename := fmt.Sprintf("%v", args[0])
-		if len(argFilename) > 0 {
-			filename = strings.TrimSpace(argFilename)
-		}
-	}
-
-	if len(args) >= 2 {
-		argFieldname := fmt.Sprintf("%v", args[1])
-		if len(argFieldname) > 0 {
-			fieldname = strings.TrimSpace(argFieldname)
-		}
-	}
-
-	if len(args) >= 3 {
-		argSkipFileNumbering := reflect.ValueOf(args[2])
-		if argSkipFileNumbering.Type().Name() == "bool" {
-			skipFileNumbering = argSkipFileNumbering.Interface().(bool)
-		}
-	}
-
-	if len(args) >= 4 {
-		argFileType := fmt.Sprintf("%v", args[3])
-		if len(argFileType) > 0 {
-			fileType = strings.TrimSpace(argFileType)
-		}
-		if fileType == "" {
-			s.Errors = append(s.Errors, errors.New("the fifth SendFile method argument for MIME type cannot be an empty string"))
-			return s
-		}
-	}
-
-	if (fieldname == "file" && !skipFileNumbering) || fieldname == "" {
-		fieldname = "file" + strconv.Itoa(len(s.FileData)+1)
-	}
-
-	switch v := reflect.ValueOf(file); v.Kind() {
-	case reflect.String:
-		pathToFile, err := filepath.Abs(v.String())
-		if err != nil {
-			s.Errors = append(s.Errors, err)
-			return s
-		}
-		if filename == "" {
-			filename = filepath.Base(pathToFile)
-		}
-		data, err := ioutil.ReadFile(v.String())
-		if err != nil {
-			s.Errors = append(s.Errors, err)
-			return s
-		}
-		s.FileData = append(s.FileData, File{
-			Filename:  filename,
-			Fieldname: fieldname,
-			MimeType:  fileType,
-			Data:      data,
-		})
-	case reflect.Slice:
-		slice := makeSliceOfReflectValue(v)
-		if filename == "" {
-			filename = "filename"
-		}
-		f := File{
-			Filename:  filename,
-			Fieldname: fieldname,
-			MimeType:  fileType,
-			Data:      make([]byte, len(slice)),
-		}
-		for i := range slice {
-			f.Data[i] = slice[i].(byte)
-		}
-		s.FileData = append(s.FileData, f)
-	case reflect.Ptr:
-		if len(args) == 1 {
-			return s.SendFile(v.Elem().Interface(), args[0])
-		}
-		if len(args) == 2 {
-			return s.SendFile(v.Elem().Interface(), args[0], args[1])
-		}
-		if len(args) == 3 {
-			return s.SendFile(v.Elem().Interface(), args[0], args[1], args[2])
-		}
-		if len(args) == 4 {
-			return s.SendFile(v.Elem().Interface(), args[0], args[1], args[2], args[3])
-		}
-		return s.SendFile(v.Elem().Interface())
-	default:
-		if v.Type() == reflect.TypeOf(os.File{}) {
-			osfile := v.Interface().(os.File)
-			if filename == "" {
-				filename = filepath.Base(osfile.Name())
-			}
-			data, err := ioutil.ReadFile(osfile.Name())
-			if err != nil {
-				s.Errors = append(s.Errors, err)
-				return s
-			}
-			s.FileData = append(s.FileData, File{
-				Filename:  filename,
-				Fieldname: fieldname,
-				MimeType:  fileType,
-				Data:      data,
-			})
-			return s
-		}
-
-		s.Errors = append(s.Errors, fmt.Errorf("sendFile currently only supports either a string (path/to/file), a slice of bytes (file content itself), or a os.File"))
-	}
-
-	return s
-}
-
-func changeMapToURLValues(data map[string]interface{}) url.Values {
-	var newUrlValues = url.Values{}
-	for k, v := range data {
-		switch val := v.(type) {
-		case string:
-			newUrlValues.Add(k, val)
-		case bool:
-			newUrlValues.Add(k, strconv.FormatBool(val))
-		// if a number, change to string
-		// json.Number used to protect against a wrong (for GoRequest) default conversion
-		// which always converts number to float64.
-		// This type is caused by using Decoder.UseNumber()
-		case json.Number:
-			newUrlValues.Add(k, val.String())
-		case int:
-			newUrlValues.Add(k, strconv.FormatInt(int64(val), 10))
-		// TODO add all other int-Types (int8, int16, ...)
-		case float64:
-			newUrlValues.Add(k, strconv.FormatFloat(float64(val), 'f', -1, 64))
-		case float32:
-			newUrlValues.Add(k, strconv.FormatFloat(float64(val), 'f', -1, 64))
-		// following slices are mostly needed for tests
-		case []string:
-			for _, element := range val {
-				newUrlValues.Add(k, element)
-			}
-		case []int:
-			for _, element := range val {
-				newUrlValues.Add(k, strconv.FormatInt(int64(element), 10))
-			}
-		case []bool:
-			for _, element := range val {
-				newUrlValues.Add(k, strconv.FormatBool(element))
-			}
-		case []float64:
-			for _, element := range val {
-				newUrlValues.Add(k, strconv.FormatFloat(float64(element), 'f', -1, 64))
-			}
-		case []float32:
-			for _, element := range val {
-				newUrlValues.Add(k, strconv.FormatFloat(float64(element), 'f', -1, 64))
-			}
-		// these slices are used in practice like sending a struct
-		case []interface{}:
-
-			if len(val) <= 0 {
-				continue
-			}
-
-			switch val[0].(type) {
-			case string:
-				for _, element := range val {
-					newUrlValues.Add(k, element.(string))
-				}
-			case bool:
-				for _, element := range val {
-					newUrlValues.Add(k, strconv.FormatBool(element.(bool)))
-				}
-			case json.Number:
-				for _, element := range val {
-					newUrlValues.Add(k, element.(json.Number).String())
-				}
-			}
-		default:
-			// TODO add ptr, arrays, ...
-		}
-	}
-	return newUrlValues
 }
 
 // End is the most important function that you need to call when ending the chain. The request won't proceed without calling it.
@@ -1327,7 +898,7 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 	req.URL.RawQuery = q.Encode()
 
 	// Add basic auth
-	if s.BasicAuth != struct{ Username, Password string }{} {
+	if s.BasicAuth != (basicAuth{}) {
 		req.SetBasicAuth(s.BasicAuth.Username, s.BasicAuth.Password)
 	}
 
@@ -1351,45 +922,6 @@ func (s *SuperAgent) safeModifyHttpClient() {
 	s.Client.Transport = oldClient.Transport
 	s.Client.Timeout = oldClient.Timeout
 	s.Client.CheckRedirect = oldClient.CheckRedirect
-}
-
-func (s *SuperAgent) Timeout(timeout time.Duration) *SuperAgent {
-	s.safeModifyHttpClient()
-	s.Client.Timeout = timeout
-	return s
-}
-
-type Timeouts struct {
-	Dial      time.Duration
-	KeepAlive time.Duration
-
-	TlsHandshake   time.Duration
-	ResponseHeader time.Duration
-	ExpectContinue time.Duration
-	IdleConn       time.Duration
-}
-
-func (s *SuperAgent) Timeouts(timeouts *Timeouts) *SuperAgent {
-	s.safeModifyHttpClient()
-
-	transport, ok := s.Client.Transport.(*http.Transport)
-	if !ok {
-		return s
-	}
-
-	transport.DialContext = (&net.Dialer{
-		Timeout:   timeouts.Dial,
-		KeepAlive: timeouts.KeepAlive,
-	}).DialContext
-
-	transport.TLSHandshakeTimeout = timeouts.TlsHandshake
-	transport.ResponseHeaderTimeout = timeouts.ResponseHeader
-	transport.ExpectContinueTimeout = timeouts.ExpectContinue
-	transport.ExpectContinueTimeout = timeouts.IdleConn
-
-	s.Client.Transport = transport
-
-	return s
 }
 
 // does a shallow clone of the transport
