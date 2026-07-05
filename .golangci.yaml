@@ -8,7 +8,6 @@ linters:
     - durationcheck
     - errcheck
     - errorlint
-    - exportloopref
     - gci
     - gofmt
     - goimports
