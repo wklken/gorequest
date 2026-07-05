@@ -18,7 +18,10 @@ import (
 
 func TestConfigurationSettersAndCloneIsolation(t *testing.T) {
 	base := New()
-	base.Client.Transport = base.Transport
+	if base.Client.Transport != base.Transport {
+		t.Fatal("Expected New to bind the client to the agent transport")
+	}
+
 	base.DisableCompression().
 		SetCurlCommand(true).
 		SetDoNotClearSuperAgent(true)
@@ -37,11 +40,18 @@ func TestConfigurationSettersAndCloneIsolation(t *testing.T) {
 	}
 
 	clone := base.Clone()
+	if clone.Client == base.Client {
+		t.Fatal("Expected cloned agent to have a separate client")
+	}
+	if clone.Transport != base.Transport {
+		t.Fatal("Expected cloned agent to share the base transport before transport settings change")
+	}
+	if clone.Client.Transport != base.Transport {
+		t.Fatal("Expected cloned agent client to use the shared base transport")
+	}
+
 	clone.SetDoNotClearSuperAgent(false)
 	clone.Timeout(2 * time.Second)
-	if clone.Client == base.Client {
-		t.Fatal("Expected cloned agent timeout changes to allocate a separate client")
-	}
 	if base.Client.Timeout != 0 {
 		t.Fatalf("Expected base client timeout to stay unchanged, got %s", base.Client.Timeout)
 	}
@@ -57,6 +67,9 @@ func TestConfigurationSettersAndCloneIsolation(t *testing.T) {
 	if clone.Transport.TLSClientConfig != cfg {
 		t.Fatal("Expected clone transport to receive TLS config")
 	}
+	if clone.Client.Transport != clone.Transport {
+		t.Fatal("Expected cloned agent client to use its copied transport")
+	}
 	if base.Transport.TLSClientConfig != nil {
 		t.Fatal("Expected base transport TLS config to stay unchanged")
 	}
@@ -69,6 +82,44 @@ func TestConfigurationSettersAndCloneIsolation(t *testing.T) {
 	withBadProxy := New().Proxy("http://[::1")
 	if len(withBadProxy.Errors) == 0 {
 		t.Fatal("Expected invalid proxy URL to be recorded as an error")
+	}
+}
+
+func TestCloneClientSettingsDoNotLeak(t *testing.T) {
+	base := New()
+	clone := base.Clone().DisableRedirect()
+
+	req, err := http.NewRequest(GET, "http://example.com/redirect", nil)
+	if err != nil {
+		t.Fatalf("Unexpected request creation error: %s", err)
+	}
+
+	if err := clone.Client.CheckRedirect(req, nil); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Fatalf("Expected clone redirect policy to use last response, got %v", err)
+	}
+	if err := base.Client.CheckRedirect(req, nil); err != nil {
+		t.Fatalf("Expected base redirect policy to stay unchanged, got %v", err)
+	}
+}
+
+func TestCloneTransportSettingsDoNotLeak(t *testing.T) {
+	base := New()
+	clone := base.Clone().DisableCompression()
+
+	if clone.Transport == base.Transport {
+		t.Fatal("Expected clone transport setting changes to allocate a separate transport")
+	}
+	if !clone.Transport.DisableCompression {
+		t.Fatal("Expected clone transport to disable compression")
+	}
+	if base.Transport.DisableCompression {
+		t.Fatal("Expected base transport compression setting to stay unchanged")
+	}
+	if clone.Client.Transport != clone.Transport {
+		t.Fatal("Expected clone client to use its copied transport")
+	}
+	if base.Client.Transport != base.Transport {
+		t.Fatal("Expected base client to keep using the base transport")
 	}
 }
 

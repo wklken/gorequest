@@ -80,6 +80,11 @@ func newHttpClient() *http.Client {
 // New used to create a new SuperAgent object.
 func New() *SuperAgent {
 	debug := os.Getenv("GOREQUEST_DEBUG") == "1"
+	client := newHttpClient()
+	transport := &http.Transport{Proxy: proxyFromEnvironment}
+	// disable keep alives by default, see this issue https://github.com/parnurzeal/gorequest/issues/75
+	transport.DisableKeepAlives = true
+	client.Transport = transport
 
 	s := &SuperAgent{
 		TargetType:        TypeJSON,
@@ -92,8 +97,8 @@ func New() *SuperAgent {
 		QueryParamOrder:   []queryParam{},
 		FileData:          make([]File, 0),
 		BounceToRawString: false,
-		Client:            newHttpClient(),
-		Transport:         &http.Transport{Proxy: proxyFromEnvironment},
+		Client:            client,
+		Transport:         transport,
 		Cookies:           make([]*http.Cookie, 0),
 		Errors:            nil,
 		BasicAuth:         basicAuth{},
@@ -106,8 +111,6 @@ func New() *SuperAgent {
 		Stats:             Stats{},
 		isMock:            false,
 	}
-	// disable keep alives by default, see this issue https://github.com/parnurzeal/gorequest/issues/75
-	s.Transport.DisableKeepAlives = true
 	return s
 }
 
@@ -115,10 +118,8 @@ func New() *SuperAgent {
 // concurrently.
 // Note: This does a shallow copy of the parent. So you will need to be
 // careful of Data provided
-// Note: It also directly re-uses the client and transport. If you modify the Timeout,
-// or RedirectPolicy on a clone, the clone will have a new http.client. It is recommended
-// that the base request set your timeout and redirect polices, and no modification of
-// the client or transport happen after cloning.
+// Note: It re-uses the transport and copies the client. If you modify transport
+// settings on a clone, the clone will have a new transport.
 // Note: DoNotClearSuperAgent is forced to "true" after Clone
 func (s *SuperAgent) Clone() *SuperAgent {
 	clone := &SuperAgent{
@@ -136,7 +137,7 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		BounceToRawString:    s.BounceToRawString,
 		RawString:            s.RawString,
 		RawBytes:             shallowCopyBytes(s.RawBytes),
-		Client:               s.Client,
+		Client:               cloneHttpClient(s.Client),
 		Transport:            s.Transport,
 		Cookies:              shallowCopyCookies(s.Cookies),
 		Errors:               shallowCopyErrors(s.Errors),
@@ -168,6 +169,7 @@ func (s *SuperAgent) SetDoNotClearSuperAgent(enable bool) *SuperAgent {
 
 // DisableCompression disable the compression of http.Client.
 func (s *SuperAgent) DisableCompression() *SuperAgent {
+	s.safeModifyTransport()
 	s.Transport.DisableCompression = true
 	return s
 }
@@ -1080,12 +1082,15 @@ func (s *SuperAgent) safeModifyHttpClient() {
 	if !s.isClone {
 		return
 	}
-	oldClient := s.Client
-	s.Client = &http.Client{}
-	s.Client.Jar = oldClient.Jar
-	s.Client.Transport = oldClient.Transport
-	s.Client.Timeout = oldClient.Timeout
-	s.Client.CheckRedirect = oldClient.CheckRedirect
+	s.Client = cloneHttpClient(s.Client)
+}
+
+func cloneHttpClient(oldClient *http.Client) *http.Client {
+	if oldClient == nil {
+		return &http.Client{}
+	}
+	client := *oldClient
+	return &client
 }
 
 // does a shallow clone of the transport
@@ -1121,4 +1126,5 @@ func (s *SuperAgent) safeModifyTransport() {
 		ReadBufferSize:         oldTransport.ReadBufferSize,
 		ForceAttemptHTTP2:      oldTransport.ForceAttemptHTTP2,
 	}
+	s.Client.Transport = s.Transport
 }
