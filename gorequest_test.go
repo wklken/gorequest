@@ -1005,6 +1005,32 @@ func TestPost(t *testing.T) {
 		End()
 }
 
+func TestPostExplicitJSONStringPreservesRawBody(t *testing.T) {
+	const rawJSON = `{"z":"last","a":"first","m":{"b":2,"a":1}}`
+	var gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, _ := ioutil.ReadAll(r.Body)
+		gotBody = string(body)
+	}))
+	defer ts.Close()
+
+	resp, _, errs := New().
+		Post(ts.URL).
+		Type("json").
+		Send(rawJSON).
+		End()
+	if len(errs) > 0 {
+		t.Fatalf("Unexpected request errors: %s", errs)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
+	}
+	if gotBody != rawJSON {
+		t.Fatalf("Expected raw JSON body %s, got %s", rawJSON, gotBody)
+	}
+}
+
 // clone the super agent instead of calling New each time
 func TestPostCloneSuperAgent(t *testing.T) {
 	ts := testPostServer(t)
@@ -2672,7 +2698,7 @@ func TestAsCurlCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := fmt.Sprintf(`curl -X 'PUT' -d '%v' -H 'Content-Type: application/json' '%v'`, strings.Replace(jsonData, " ", "", -1), endpoint)
+	expected := fmt.Sprintf(`curl -X 'PUT' -d '%v' -H 'Content-Type: application/json' '%v'`, jsonData, endpoint)
 	if curlComand != expected {
 		t.Fatalf("\nExpected curlCommand=%v\n   but actual result=%v", expected, curlComand)
 	}

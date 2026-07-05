@@ -551,6 +551,12 @@ func (s *SuperAgent) SendStruct(content interface{}) *SuperAgent {
 // Its duty is to transform String into s.Data (map[string]interface{}) which later changes into appropriate format such as json, form, text, etc. in the End func.
 // Send implicitly uses SendString and you should use Send instead of this.
 func (s *SuperAgent) SendString(content string) *SuperAgent {
+	if s.shouldPreserveRawJSONString(content) {
+		s.BounceToRawString = true
+		s.RawString += content
+		return s
+	}
+
 	if !s.BounceToRawString {
 		var val interface{}
 		d := json.NewDecoder(strings.NewReader(content))
@@ -601,6 +607,13 @@ func (s *SuperAgent) SendString(content string) *SuperAgent {
 	// Dump all contents to RawString in case in the end user doesn't want json or form.
 	s.RawString += content
 	return s
+}
+
+func (s *SuperAgent) shouldPreserveRawJSONString(content string) bool {
+	if s.ForceType != TypeJSON && filterFlags(s.Header.Get("Content-Type")) != MIMEJSON {
+		return false
+	}
+	return json.Valid(StringToBytes(content))
 }
 
 // End is the most important function that you need to call when ending the chain. The request won't proceed without calling it.
