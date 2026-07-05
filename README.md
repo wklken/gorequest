@@ -20,6 +20,7 @@ features.
 - Proxy support, including environment proxy settings and SOCKS5 proxies
 - Request timeout, granular timeout, TLS, redirect, compression, and context controls
 - Retry support for selected HTTP status codes
+- Request body upload progress callbacks
 - String, byte slice, and JSON-decoded response helpers
 - Request/response debug logging, curl command output, HTTP tracing, and gock-based mocks
 
