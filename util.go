@@ -8,6 +8,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -22,22 +23,22 @@ func cloneMapArray(old map[string][]string) map[string][]string {
 	return newMap
 }
 
-func shallowCopyData(old map[string]interface{}) map[string]interface{} {
+func shallowCopyData(old map[string]any) map[string]any {
 	if old == nil {
 		return nil
 	}
-	newData := make(map[string]interface{}, len(old))
+	newData := make(map[string]any, len(old))
 	for k, val := range old {
 		newData[k] = val
 	}
 	return newData
 }
 
-func shallowCopyDataSlice(old []interface{}) []interface{} {
+func shallowCopyDataSlice(old []any) []any {
 	if old == nil {
 		return nil
 	}
-	newData := make([]interface{}, len(old))
+	newData := make([]any, len(old))
 	copy(newData, old)
 	return newData
 }
@@ -79,21 +80,16 @@ func shallowCopyErrors(old []error) []error {
 }
 
 func statusesContains(statuses []int, respStatus int) bool {
-	for _, status := range statuses {
-		if status == respStatus {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(statuses, respStatus)
 }
 
-func makeSliceOfReflectValue(v reflect.Value) (slice []interface{}) {
+func makeSliceOfReflectValue(v reflect.Value) (slice []any) {
 	kind := v.Kind()
 	if kind != reflect.Slice && kind != reflect.Array {
 		return slice
 	}
 
-	slice = make([]interface{}, v.Len())
+	slice = make([]any, v.Len())
 	for i := 0; i < v.Len(); i++ {
 		slice[i] = v.Index(i).Interface()
 	}
@@ -101,7 +97,7 @@ func makeSliceOfReflectValue(v reflect.Value) (slice []interface{}) {
 	return slice
 }
 
-func changeMapToURLValues(data map[string]interface{}) url.Values {
+func changeMapToURLValues(data map[string]any) url.Values {
 	var newUrlValues = url.Values{}
 	for k, v := range data {
 		switch val := v.(type) {
@@ -144,7 +140,7 @@ func changeMapToURLValues(data map[string]interface{}) url.Values {
 				newUrlValues.Add(k, strconv.FormatFloat(float64(element), 'f', -1, 64))
 			}
 		// these slices are used in practice like sending a struct
-		case []interface{}:
+		case []any:
 			if len(val) <= 0 {
 				continue
 			}
