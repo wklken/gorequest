@@ -1031,6 +1031,37 @@ func TestPostExplicitJSONStringPreservesRawBody(t *testing.T) {
 	}
 }
 
+func TestPostByteSliceWithExplicitContentTypeSendsRawBody(t *testing.T) {
+	payload := []byte{0, 1, 2, 3, 255}
+	var gotBody []byte
+	var gotContentType string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		defer r.Body.Close()
+		body, _ := ioutil.ReadAll(r.Body)
+		gotBody = body
+	}))
+	defer ts.Close()
+
+	resp, _, errs := New().
+		Post(ts.URL).
+		Set("Content-Type", "image/png").
+		Send(payload).
+		End()
+	if len(errs) > 0 {
+		t.Fatalf("Unexpected request errors: %s", errs)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
+	}
+	if gotContentType != "image/png" {
+		t.Fatalf("Expected image/png content type, got %q", gotContentType)
+	}
+	if !bytes.Equal(gotBody, payload) {
+		t.Fatalf("Expected raw bytes %v, got %v", payload, gotBody)
+	}
+}
+
 // clone the super agent instead of calling New each time
 func TestPostCloneSuperAgent(t *testing.T) {
 	ts := testPostServer(t)

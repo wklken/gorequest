@@ -44,6 +44,15 @@ func shallowCopyDataSlice(old []interface{}) []interface{} {
 	return newData
 }
 
+func shallowCopyBytes(old []byte) []byte {
+	if old == nil {
+		return nil
+	}
+	newData := make([]byte, len(old))
+	copy(newData, old)
+	return newData
+}
+
 func shallowCopyQueryParams(old []queryParam) []queryParam {
 	if old == nil {
 		return nil

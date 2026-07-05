@@ -47,6 +47,7 @@ type SuperAgent struct {
 	FileData             []File
 	BounceToRawString    bool
 	RawString            string
+	RawBytes             []byte
 	Client               *http.Client
 	Transport            *http.Transport
 	Cookies              []*http.Cookie
@@ -135,6 +136,7 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		FileData:             shallowCopyFileArray(s.FileData),
 		BounceToRawString:    s.BounceToRawString,
 		RawString:            s.RawString,
+		RawBytes:             shallowCopyBytes(s.RawBytes),
 		Client:               s.Client,
 		Transport:            s.Transport,
 		Cookies:              shallowCopyCookies(s.Cookies),
@@ -187,6 +189,7 @@ func (s *SuperAgent) ClearSuperAgent() {
 	s.FileData = make([]File, 0)
 	s.BounceToRawString = false
 	s.RawString = ""
+	s.RawBytes = nil
 	s.ForceType = ""
 	s.TargetType = TypeJSON
 	s.Cookies = make([]*http.Cookie, 0)
@@ -508,7 +511,11 @@ func (s *SuperAgent) Send(content interface{}) *SuperAgent {
 	case reflect.Struct:
 		s.SendStruct(v.Interface())
 	case reflect.Slice:
-		s.SendSlice(makeSliceOfReflectValue(v))
+		if bytes, ok := content.([]byte); ok && s.shouldSendRawBytes() {
+			s.SendBytes(bytes)
+		} else {
+			s.SendSlice(makeSliceOfReflectValue(v))
+		}
 	case reflect.Array:
 		s.SendSlice(makeSliceOfReflectValue(v))
 	case reflect.Ptr:
@@ -531,6 +538,17 @@ func (s *SuperAgent) SendSlice(content []interface{}) *SuperAgent {
 
 func (s *SuperAgent) SendMap(content interface{}) *SuperAgent {
 	return s.SendStruct(content)
+}
+
+// SendBytes sends content as a raw request body.
+func (s *SuperAgent) SendBytes(content []byte) *SuperAgent {
+	s.RawBytes = shallowCopyBytes(content)
+	return s
+}
+
+func (s *SuperAgent) shouldSendRawBytes() bool {
+	contentType := filterFlags(s.Header.Get("Content-Type"))
+	return contentType != "" && contentType != MIMEJSON && contentType != Types[TypeForm]
 }
 
 // SendStruct (similar to SendString) returns SuperAgent's itself for any next chain and takes content interface{} as a parameter.
@@ -807,112 +825,117 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 	//
 	//     https://github.com/parnurzeal/gorequest/pull/136
 	//
-	switch s.TargetType {
-	case TypeJSON:
-		// If-case to give support to json array. we check if
-		// 1) Map only: send it as json map from s.Data
-		// 2) Array or Mix of map & array or others: send it as rawstring from s.RawString
-		var contentJson []byte
-		if s.BounceToRawString {
-			contentJson = StringToBytes(s.RawString)
-		} else if len(s.Data) != 0 {
-			contentJson, _ = json.Marshal(s.Data)
-		} else if len(s.SliceData) != 0 {
-			contentJson, _ = json.Marshal(s.SliceData)
-		}
-		if contentJson != nil {
-			contentReader = bytes.NewReader(contentJson)
-			contentType = "application/json"
-		}
-	case TypeForm, TypeFormData, TypeUrlencoded:
-		var contentForm []byte
-		if s.BounceToRawString || len(s.SliceData) != 0 {
-			contentForm = StringToBytes(s.RawString)
-		} else {
-			formData := changeMapToURLValues(s.Data)
-			contentForm = StringToBytes(formData.Encode())
-		}
-		if len(contentForm) != 0 {
-			contentReader = bytes.NewReader(contentForm)
-			contentType = "application/x-www-form-urlencoded"
-		}
-	case TypeText:
-		if len(s.RawString) != 0 {
-			contentReader = strings.NewReader(s.RawString)
-			contentType = "text/plain"
-		}
-	case TypeXML:
-		if len(s.RawString) != 0 {
-			contentReader = strings.NewReader(s.RawString)
-			contentType = "application/xml"
-		}
-	case TypeMultipart:
-		var (
-			buf = &bytes.Buffer{}
-			mw  = multipart.NewWriter(buf)
-		)
-
-		if s.BounceToRawString {
-			fieldName := s.Header.Get("data_fieldname")
-			if fieldName == "" {
-				fieldName = "data"
+	if s.RawBytes != nil {
+		contentReader = bytes.NewReader(s.RawBytes)
+		contentType = "application/octet-stream"
+	} else {
+		switch s.TargetType {
+		case TypeJSON:
+			// If-case to give support to json array. we check if
+			// 1) Map only: send it as json map from s.Data
+			// 2) Array or Mix of map & array or others: send it as rawstring from s.RawString
+			var contentJson []byte
+			if s.BounceToRawString {
+				contentJson = StringToBytes(s.RawString)
+			} else if len(s.Data) != 0 {
+				contentJson, _ = json.Marshal(s.Data)
+			} else if len(s.SliceData) != 0 {
+				contentJson, _ = json.Marshal(s.SliceData)
 			}
-			fw, _ := mw.CreateFormField(fieldName)
-			fw.Write(StringToBytes(s.RawString))
-			contentReader = buf
-		}
+			if contentJson != nil {
+				contentReader = bytes.NewReader(contentJson)
+				contentType = "application/json"
+			}
+		case TypeForm, TypeFormData, TypeUrlencoded:
+			var contentForm []byte
+			if s.BounceToRawString || len(s.SliceData) != 0 {
+				contentForm = StringToBytes(s.RawString)
+			} else {
+				formData := changeMapToURLValues(s.Data)
+				contentForm = StringToBytes(formData.Encode())
+			}
+			if len(contentForm) != 0 {
+				contentReader = bytes.NewReader(contentForm)
+				contentType = "application/x-www-form-urlencoded"
+			}
+		case TypeText:
+			if len(s.RawString) != 0 {
+				contentReader = strings.NewReader(s.RawString)
+				contentType = "text/plain"
+			}
+		case TypeXML:
+			if len(s.RawString) != 0 {
+				contentReader = strings.NewReader(s.RawString)
+				contentType = "application/xml"
+			}
+		case TypeMultipart:
+			var (
+				buf = &bytes.Buffer{}
+				mw  = multipart.NewWriter(buf)
+			)
 
-		if len(s.Data) != 0 {
-			formData := changeMapToURLValues(s.Data)
-			for key, values := range formData {
-				for _, value := range values {
-					fw, _ := mw.CreateFormField(key)
-					fw.Write(StringToBytes(value))
+			if s.BounceToRawString {
+				fieldName := s.Header.Get("data_fieldname")
+				if fieldName == "" {
+					fieldName = "data"
 				}
+				fw, _ := mw.CreateFormField(fieldName)
+				fw.Write(StringToBytes(s.RawString))
+				contentReader = buf
 			}
-			contentReader = buf
-		}
 
-		if len(s.SliceData) != 0 {
-			fieldName := s.Header.Get("json_fieldname")
-			if fieldName == "" {
-				fieldName = "data"
+			if len(s.Data) != 0 {
+				formData := changeMapToURLValues(s.Data)
+				for key, values := range formData {
+					for _, value := range values {
+						fw, _ := mw.CreateFormField(key)
+						fw.Write(StringToBytes(value))
+					}
+				}
+				contentReader = buf
 			}
-			// copied from CreateFormField() in mime/multipart/writer.go
-			h := make(textproto.MIMEHeader)
-			fieldName = strings.Replace(strings.Replace(fieldName, "\\", "\\\\", -1), `"`, "\\\"", -1)
-			h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"`, fieldName))
-			h.Set("Content-Type", "application/json")
-			fw, _ := mw.CreatePart(h)
-			contentJson, err := json.Marshal(s.SliceData)
-			if err != nil {
-				return nil, err
+
+			if len(s.SliceData) != 0 {
+				fieldName := s.Header.Get("json_fieldname")
+				if fieldName == "" {
+					fieldName = "data"
+				}
+				// copied from CreateFormField() in mime/multipart/writer.go
+				h := make(textproto.MIMEHeader)
+				fieldName = strings.Replace(strings.Replace(fieldName, "\\", "\\\\", -1), `"`, "\\\"", -1)
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"`, fieldName))
+				h.Set("Content-Type", "application/json")
+				fw, _ := mw.CreatePart(h)
+				contentJson, err := json.Marshal(s.SliceData)
+				if err != nil {
+					return nil, err
+				}
+				fw.Write(contentJson)
+				contentReader = buf
 			}
-			fw.Write(contentJson)
-			contentReader = buf
-		}
 
-		// add the files
-		if len(s.FileData) != 0 {
-			for _, file := range s.FileData {
-				fw, _ := CreateFormFile(mw, file.Fieldname, file.Filename, file.MimeType)
-				fw.Write(file.Data)
+			// add the files
+			if len(s.FileData) != 0 {
+				for _, file := range s.FileData {
+					fw, _ := CreateFormFile(mw, file.Fieldname, file.Filename, file.MimeType)
+					fw.Write(file.Data)
+				}
+				contentReader = buf
 			}
-			contentReader = buf
-		}
 
-		// close before call to FormDataContentType ! otherwise, it's not valid multipart
-		mw.Close()
+			// close before call to FormDataContentType ! otherwise, it's not valid multipart
+			mw.Close()
 
-		if contentReader != nil {
-			contentType = mw.FormDataContentType()
+			if contentReader != nil {
+				contentType = mw.FormDataContentType()
+			}
+		case "":
+			contentType = ""
+			contentReader = nil
+		default:
+			// let's return an error instead of an nil pointer exception here
+			return nil, fmt.Errorf("TargetType '%s' could not be determined", s.TargetType)
 		}
-	case "":
-		contentType = ""
-		contentReader = nil
-	default:
-		// let's return an error instead of an nil pointer exception here
-		return nil, fmt.Errorf("TargetType '%s' could not be determined", s.TargetType)
 	}
 
 	if req, err = http.NewRequest(s.Method, s.Url, contentReader); err != nil {
