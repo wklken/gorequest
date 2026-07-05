@@ -62,8 +62,6 @@ func (s *SuperAgent) shouldRetry(resp Response, hasError bool) bool {
 func copyRetryable(old superAgentRetryable) superAgentRetryable {
 	newRetryable := old
 	newRetryable.RetryableStatus = make([]int, len(old.RetryableStatus))
-	for i := range old.RetryableStatus {
-		newRetryable.RetryableStatus[i] = old.RetryableStatus[i]
-	}
+	copy(newRetryable.RetryableStatus, old.RetryableStatus)
 	return newRetryable
 }

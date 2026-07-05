@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"reflect"
 	"strings"
 	"testing"
@@ -211,6 +212,57 @@ func TestCustomMethodAndMakeRequestEdges(t *testing.T) {
 	agent.TargetType = "bad-type"
 	if _, err := agent.MakeRequest(); err == nil {
 		t.Fatal("Expected unsupported target type to return an error")
+	}
+}
+
+func TestDisableRedirectReturnsRedirectResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "/target", http.StatusFound)
+			return
+		}
+		if _, err := io.WriteString(w, "target"); err != nil {
+			t.Fatalf("Unexpected write error: %s", err)
+		}
+	}))
+	defer ts.Close()
+
+	resp, _, errs := New().DisableRedirect().Get(ts.URL + "/redirect").End()
+	if len(errs) > 0 {
+		t.Fatalf("Unexpected request errors: %s", errs)
+	}
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("Expected redirect response to be returned, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Location") != "/target" {
+		t.Fatalf("Expected Location header to be preserved, got %q", resp.Header.Get("Location"))
+	}
+}
+
+func TestHttpTraceAppliesClientTrace(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := io.WriteString(w, "ok"); err != nil {
+			t.Fatalf("Unexpected write error: %s", err)
+		}
+	}))
+	defer ts.Close()
+
+	gotFirstResponseByte := false
+	trace := &httptrace.ClientTrace{
+		GotFirstResponseByte: func() {
+			gotFirstResponseByte = true
+		},
+	}
+
+	resp, _, errs := New().HttpTrace(trace).Get(ts.URL).End()
+	if len(errs) > 0 {
+		t.Fatalf("Unexpected request errors: %s", errs)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
+	}
+	if !gotFirstResponseByte {
+		t.Fatal("Expected client trace callback to run")
 	}
 }
 

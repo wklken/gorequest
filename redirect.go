@@ -22,7 +22,7 @@ func (s *SuperAgent) RedirectPolicy(policy func(req Request, via []Request) erro
 
 // DisableRedirect will disable the redirect of status code 3xx.
 func (s *SuperAgent) DisableRedirect() *SuperAgent {
-	s.Client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+	s.Client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
 	return s
