@@ -189,6 +189,26 @@ func TestEndStructDecodeErrors(t *testing.T) {
 	}
 }
 
+func TestEndStructAllowsEmptyBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", MIMEJSON)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	var result heyYou
+	resp, body, errs := New().Get(ts.URL).EndStruct(&result)
+	if len(errs) > 0 {
+		t.Fatalf("Expected empty body to decode without errors, got %s", errs)
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("Expected status 204, got %d", resp.StatusCode)
+	}
+	if len(body) != 0 {
+		t.Fatalf("Expected empty body, got %q", string(body))
+	}
+}
+
 func TestCustomMethodAndMakeRequestEdges(t *testing.T) {
 	for _, method := range []string{GET, POST, HEAD, PUT, DELETE, PATCH, OPTIONS, "TRACE"} {
 		req, err := New().CustomMethod(method, "http://example.com/path").MakeRequest()

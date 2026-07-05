@@ -676,6 +676,10 @@ func (s *SuperAgent) EndStruct(v interface{}, callback ...func(response Response
 		return nil, body, errs
 	}
 
+	if len(body) == 0 {
+		return resp, body, nil
+	}
+
 	err := json.Unmarshal(body, &v)
 	if err != nil {
 		respContentType := filterFlags(resp.Header.Get("Content-Type"))
