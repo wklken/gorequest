@@ -59,6 +59,7 @@ func sameRedirectHost(a, b string) bool {
 
 // DisableRedirect will disable the redirect of status code 3xx.
 func (s *SuperAgent) DisableRedirect() *SuperAgent {
+	s.safeModifyHttpClient()
 	s.Client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}

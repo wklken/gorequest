@@ -39,6 +39,10 @@ func (s *SuperAgent) Timeouts(timeouts *Timeouts) *SuperAgent {
 		}
 		transport = clientTransport
 		s.Transport = transport
+		if s.isClone {
+			s.safeModifyTransport()
+			transport = s.Transport
+		}
 	} else {
 		s.safeModifyTransport()
 		transport = s.Transport

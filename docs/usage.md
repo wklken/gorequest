@@ -340,8 +340,10 @@ resp, body, errs := gorequest.New().
 ## Clone and Reuse
 
 Reuse request settings by cloning before making a request. Clones copy headers,
-query params, cookies, and other settings, while sharing the underlying
-transport and HTTP client.
+query params, cookies, the HTTP client settings, and other request settings.
+Clones share the underlying transport by default so connection pooling can be
+reused; changing transport settings such as proxy, TLS, compression, or
+granular timeouts on a clone gives that clone its own transport.
 
 ```go
 baseRequest := gorequest.New().
