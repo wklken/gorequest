@@ -350,6 +350,22 @@ resp, body, errs := gorequest.New().
 	End()
 ```
 
+Use `SetRetryPolicy` when retry decisions need response headers, body content,
+or request errors:
+
+```go
+resp, body, errs := gorequest.New().
+	Get("https://example.com").
+	Retry(3, 5*time.Second).
+	SetRetryPolicy(func(resp gorequest.Response, body []byte, errs []error) bool {
+		if len(errs) > 0 || resp == nil {
+			return true
+		}
+		return resp.Header.Get("X-Retry") == "yes" || bytes.Contains(body, []byte("try again"))
+	}).
+	End()
+```
+
 ## Clone and Reuse
 
 Reuse request settings by cloning before making a request. Clones copy headers,
