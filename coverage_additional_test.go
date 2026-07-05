@@ -72,6 +72,27 @@ func TestConfigurationSettersAndCloneIsolation(t *testing.T) {
 	}
 }
 
+func TestNewUsesProxyFromEnvironment(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:8888")
+	t.Setenv("NO_PROXY", "")
+
+	agent := New()
+	req, err := http.NewRequest(GET, "http://example.com", nil)
+	if err != nil {
+		t.Fatalf("Unexpected request creation error: %s", err)
+	}
+	if agent.Transport.Proxy == nil {
+		t.Fatal("Expected default transport to use ProxyFromEnvironment")
+	}
+	proxyURL, err := agent.Transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("Unexpected proxy lookup error: %s", err)
+	}
+	if proxyURL.String() != "http://127.0.0.1:8888" {
+		t.Fatalf("Expected HTTP_PROXY URL, got %s", proxyURL)
+	}
+}
+
 func TestTimeoutsUpdatesTransportAndIgnoresNonTransport(t *testing.T) {
 	agent := New()
 	agent.Client.Transport = agent.Transport

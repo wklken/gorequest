@@ -1,8 +1,11 @@
 package gorequest
 
 import (
+	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 )
 
 // Proxy function accepts a proxy url string to setup proxy url for any request.
@@ -32,4 +35,72 @@ func (s *SuperAgent) Proxy(proxyUrl string) *SuperAgent {
 		s.Transport.Proxy = http.ProxyURL(parsedProxyUrl)
 	}
 	return s
+}
+
+func proxyFromEnvironment(req *http.Request) (*url.URL, error) {
+	if req == nil || req.URL == nil {
+		return nil, nil
+	}
+	if bypassProxy(req.URL.Hostname(), req.URL.Host) {
+		return nil, nil
+	}
+
+	proxyURL := proxyEnvValue(req.URL.Scheme)
+	if proxyURL == "" {
+		return nil, nil
+	}
+	if !strings.Contains(proxyURL, "://") {
+		proxyURL = req.URL.Scheme + "://" + proxyURL
+	}
+	return url.Parse(proxyURL)
+}
+
+func proxyEnvValue(scheme string) string {
+	switch strings.ToLower(scheme) {
+	case "https":
+		if proxyURL := firstEnv("HTTPS_PROXY", "https_proxy"); proxyURL != "" {
+			return proxyURL
+		}
+	case "http":
+		if proxyURL := firstEnv("HTTP_PROXY", "http_proxy"); proxyURL != "" {
+			return proxyURL
+		}
+	}
+	return firstEnv("ALL_PROXY", "all_proxy")
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func bypassProxy(hostname, host string) bool {
+	if hostname == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(hostname); ip != nil && ip.IsLoopback() {
+		return true
+	}
+
+	noProxy := firstEnv("NO_PROXY", "no_proxy")
+	if noProxy == "" {
+		return false
+	}
+	for _, entry := range strings.Split(noProxy, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if entry == "*" || strings.EqualFold(entry, host) || strings.EqualFold(entry, hostname) {
+			return true
+		}
+		if strings.HasPrefix(entry, ".") && strings.HasSuffix(hostname, entry) {
+			return true
+		}
+	}
+	return false
 }

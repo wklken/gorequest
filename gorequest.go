@@ -94,7 +94,7 @@ func New() *SuperAgent {
 		FileData:          make([]File, 0),
 		BounceToRawString: false,
 		Client:            newHttpClient(),
-		Transport:         &http.Transport{},
+		Transport:         &http.Transport{Proxy: proxyFromEnvironment},
 		Cookies:           make([]*http.Cookie, 0),
 		Errors:            nil,
 		BasicAuth:         basicAuth{},
