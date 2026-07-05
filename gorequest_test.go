@@ -1275,6 +1275,44 @@ func checkFile(t *testing.T, fileheader *multipart.FileHeader) {
 	}
 }
 
+func TestUploadProgressReportsRequestBodyBytes(t *testing.T) {
+	var progress []int64
+	var received int64
+
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		received = int64(len(body))
+	}))
+	defer ts.Close()
+
+	_, _, errs := New().
+		Post(ts.URL).
+		Type("multipart").
+		SendFile([]byte("upload progress body"), "progress.txt").
+		SetUploadProgress(func(uploaded int64) {
+			progress = append(progress, uploaded)
+		}).
+		End()
+	if errs != nil {
+		t.Fatalf("Expected upload progress request to succeed, got %v", errs)
+	}
+	if len(progress) == 0 {
+		t.Fatal("Expected upload progress callback to be called")
+	}
+	for i := 1; i < len(progress); i++ {
+		if progress[i] < progress[i-1] {
+			t.Fatalf("Expected upload progress to be monotonic, got %v", progress)
+		}
+	}
+	if progress[len(progress)-1] != received {
+		t.Fatalf("Expected final upload progress %d, got %d", received, progress[len(progress)-1])
+	}
+}
+
 // testing for POST-Request of Type multipart
 func TestMultipartRequest(t *testing.T) {
 

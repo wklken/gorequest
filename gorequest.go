@@ -55,6 +55,7 @@ type SuperAgent struct {
 	Debug                bool
 	CurlCommand          bool
 	logger               Logger
+	uploadProgress       UploadProgress
 	Retryable            superAgentRetryable
 	DoNotClearSuperAgent bool
 	isClone              bool
@@ -105,6 +106,7 @@ func New() *SuperAgent {
 		Debug:             debug,
 		CurlCommand:       false,
 		logger:            log.New(os.Stderr, "[gorequest]", log.LstdFlags),
+		uploadProgress:    nil,
 		isClone:           false,
 		ctx:               nil,
 		trace:             nil,
@@ -145,6 +147,7 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		Debug:                s.Debug,
 		CurlCommand:          s.CurlCommand,
 		logger:               s.logger, // thread safe.. anyway
+		uploadProgress:       s.uploadProgress,
 		Retryable:            copyRetryable(s.Retryable),
 		DoNotClearSuperAgent: true,
 		isClone:              true,
@@ -799,6 +802,8 @@ func (s *SuperAgent) getResponseBytes() (Response, []byte, []error) {
 
 	// Display CURL command line
 	s.logCurlCommand(req)
+
+	s.wrapUploadProgress(req)
 
 	startTime := time.Now()
 	// stats collect the requestBytes

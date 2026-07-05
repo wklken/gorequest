@@ -185,6 +185,19 @@ resp, body, errs := gorequest.New().
 	End()
 ```
 
+Track request body upload progress with `SetUploadProgress`:
+
+```go
+resp, body, errs := gorequest.New().
+	Post("https://example.com/upload").
+	Type("multipart").
+	SendFile("./file1.txt").
+	SetUploadProgress(func(uploaded int64) {
+		fmt.Println("uploaded bytes:", uploaded)
+	}).
+	End()
+```
+
 ## Response Helpers
 
 `End` returns the response body as a string:
