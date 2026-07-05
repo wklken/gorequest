@@ -118,6 +118,12 @@ func TestTimeoutsUpdatesTransportAndIgnoresNonTransport(t *testing.T) {
 	if transport.ResponseHeaderTimeout != 4*time.Second {
 		t.Fatalf("Expected ResponseHeaderTimeout=4s, got %s", transport.ResponseHeaderTimeout)
 	}
+	if transport.ExpectContinueTimeout != 5*time.Second {
+		t.Fatalf("Expected ExpectContinueTimeout=5s, got %s", transport.ExpectContinueTimeout)
+	}
+	if transport.IdleConnTimeout != 6*time.Second {
+		t.Fatalf("Expected IdleConnTimeout=6s, got %s", transport.IdleConnTimeout)
+	}
 
 	nonTransport := New()
 	nonTransport.Client.Transport = roundTripFunc(func(_ *http.Request) (*http.Response, error) {

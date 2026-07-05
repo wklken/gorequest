@@ -38,7 +38,7 @@ func (s *SuperAgent) Timeouts(timeouts *Timeouts) *SuperAgent {
 	transport.TLSHandshakeTimeout = timeouts.TlsHandshake
 	transport.ResponseHeaderTimeout = timeouts.ResponseHeader
 	transport.ExpectContinueTimeout = timeouts.ExpectContinue
-	transport.ExpectContinueTimeout = timeouts.IdleConn
+	transport.IdleConnTimeout = timeouts.IdleConn
 
 	s.Client.Transport = transport
 
