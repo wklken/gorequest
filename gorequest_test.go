@@ -2807,6 +2807,38 @@ func TestAsCurlCommand(t *testing.T) {
 	}
 }
 
+func TestDump(t *testing.T) {
+	handlerCalled := false
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		handlerCalled = true
+	}))
+	defer ts.Close()
+
+	dump, err := New().
+		Post(ts.URL+"/dump?x=1").
+		Set("X-Debug", "yes").
+		Type("json").
+		Send(`{"name":"gorequest"}`).
+		Dump()
+	if err != nil {
+		t.Fatalf("Unexpected Dump error: %s", err)
+	}
+	if handlerCalled {
+		t.Fatal("Expected Dump to build the request without sending it")
+	}
+
+	for _, expected := range []string{
+		"POST /dump?x=1 HTTP/1.1",
+		"Content-Type: application/json",
+		"X-Debug: yes",
+		`{"name":"gorequest"}`,
+	} {
+		if !strings.Contains(dump, expected) {
+			t.Fatalf("Expected Dump output to contain %q, got:\n%s", expected, dump)
+		}
+	}
+}
+
 func TestSetDebugByEnvironmentVar(t *testing.T) {
 	endpoint := "http://github.com/parnurzeal/gorequest"
 
