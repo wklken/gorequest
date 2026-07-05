@@ -576,6 +576,9 @@ func (s *SuperAgent) SendStruct(content interface{}) *SuperAgent {
 // Send implicitly uses SendString and you should use Send instead of this.
 func (s *SuperAgent) SendString(content string) *SuperAgent {
 	if s.shouldPreserveRawJSONString(content) {
+		if s.mergePreservedJSONObjects(content) {
+			return s
+		}
 		s.BounceToRawString = true
 		s.RawString += content
 		return s
@@ -637,7 +640,42 @@ func (s *SuperAgent) shouldPreserveRawJSONString(content string) bool {
 	if s.ForceType != TypeJSON && filterFlags(s.Header.Get("Content-Type")) != MIMEJSON {
 		return false
 	}
-	return json.Valid(StringToBytes(content))
+	_, ok := decodeJSONObject(content)
+	return ok
+}
+
+func (s *SuperAgent) mergePreservedJSONObjects(content string) bool {
+	if !s.BounceToRawString || s.RawString == "" {
+		return false
+	}
+
+	existing, ok := decodeJSONObject(s.RawString)
+	if !ok {
+		return false
+	}
+	incoming, ok := decodeJSONObject(content)
+	if !ok {
+		return false
+	}
+	for k, v := range existing {
+		s.Data[k] = v
+	}
+	for k, v := range incoming {
+		s.Data[k] = v
+	}
+	s.BounceToRawString = false
+	s.RawString += content
+	return true
+}
+
+func decodeJSONObject(content string) (map[string]interface{}, bool) {
+	var val map[string]interface{}
+	d := json.NewDecoder(strings.NewReader(content))
+	d.UseNumber()
+	if err := d.Decode(&val); err != nil {
+		return nil, false
+	}
+	return val, true
 }
 
 // End is the most important function that you need to call when ending the chain. The request won't proceed without calling it.
@@ -880,7 +918,9 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 					fieldName = "data"
 				}
 				fw, _ := mw.CreateFormField(fieldName)
-				fw.Write(StringToBytes(s.RawString))
+				if _, err := fw.Write(StringToBytes(s.RawString)); err != nil {
+					return nil, err
+				}
 				contentReader = buf
 			}
 
@@ -889,7 +929,9 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 				for key, values := range formData {
 					for _, value := range values {
 						fw, _ := mw.CreateFormField(key)
-						fw.Write(StringToBytes(value))
+						if _, err := fw.Write(StringToBytes(value)); err != nil {
+							return nil, err
+						}
 					}
 				}
 				contentReader = buf
@@ -910,7 +952,9 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 				if err != nil {
 					return nil, err
 				}
-				fw.Write(contentJson)
+				if _, err := fw.Write(contentJson); err != nil {
+					return nil, err
+				}
 				contentReader = buf
 			}
 
@@ -918,7 +962,9 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 			if len(s.FileData) != 0 {
 				for _, file := range s.FileData {
 					fw, _ := CreateFormFile(mw, file.Fieldname, file.Filename, file.MimeType)
-					fw.Write(file.Data)
+					if _, err := fw.Write(file.Data); err != nil {
+						return nil, err
+					}
 				}
 				contentReader = buf
 			}
@@ -968,11 +1014,11 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 	}
 
 	// Add all querystring from Query func while preserving caller order.
-	if len(s.QueryParamOrder) != 0 {
-		encodedQuery := encodeQueryParams(s.QueryParamOrder)
+	if len(s.QueryParamOrder) != 0 || len(s.QueryData) != 0 {
+		encodedQuery := encodeQueryParams(s.QueryParamOrder, s.QueryData)
 		if req.URL.RawQuery == "" {
 			req.URL.RawQuery = encodedQuery
-		} else {
+		} else if encodedQuery != "" {
 			req.URL.RawQuery += "&" + encodedQuery
 		}
 	}
@@ -990,12 +1036,33 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 	return req, nil
 }
 
-func encodeQueryParams(params []queryParam) string {
+func encodeQueryParams(params []queryParam, queryData url.Values) string {
 	encoded := make([]string, 0, len(params))
+	remaining := url.Values(cloneMapArray(queryData))
 	for _, param := range params {
 		encoded = append(encoded, url.QueryEscape(param.Key)+"="+url.QueryEscape(param.Value))
+		removeQueryParam(remaining, param)
+	}
+	if fallback := remaining.Encode(); fallback != "" {
+		encoded = append(encoded, fallback)
 	}
 	return strings.Join(encoded, "&")
+}
+
+func removeQueryParam(values url.Values, param queryParam) {
+	queryValues, ok := values[param.Key]
+	if !ok {
+		return
+	}
+	for i, value := range queryValues {
+		if value == param.Value {
+			values[param.Key] = append(queryValues[:i], queryValues[i+1:]...)
+			if len(values[param.Key]) == 0 {
+				delete(values, param.Key)
+			}
+			return
+		}
+	}
 }
 
 // we don't want to mess up other clones when we modify the client..

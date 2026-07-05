@@ -2,13 +2,12 @@ package gorequest
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
+	"golang.org/x/net/http/httpproxy"
 	"golang.org/x/net/proxy"
 )
 
@@ -56,68 +55,7 @@ func proxyFromEnvironment(req *http.Request) (*url.URL, error) {
 	if req == nil || req.URL == nil {
 		return nil, nil
 	}
-	if bypassProxy(req.URL.Hostname(), req.URL.Host) {
-		return nil, nil
-	}
-
-	proxyURL := proxyEnvValue(req.URL.Scheme)
-	if proxyURL == "" {
-		return nil, nil
-	}
-	if !strings.Contains(proxyURL, "://") {
-		proxyURL = req.URL.Scheme + "://" + proxyURL
-	}
-	return url.Parse(proxyURL)
-}
-
-func proxyEnvValue(scheme string) string {
-	switch strings.ToLower(scheme) {
-	case "https":
-		if proxyURL := firstEnv("HTTPS_PROXY", "https_proxy"); proxyURL != "" {
-			return proxyURL
-		}
-	case "http":
-		if proxyURL := firstEnv("HTTP_PROXY", "http_proxy"); proxyURL != "" {
-			return proxyURL
-		}
-	}
-	return firstEnv("ALL_PROXY", "all_proxy")
-}
-
-func firstEnv(keys ...string) string {
-	for _, key := range keys {
-		if value := os.Getenv(key); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func bypassProxy(hostname, host string) bool {
-	if hostname == "localhost" {
-		return true
-	}
-	if ip := net.ParseIP(hostname); ip != nil && ip.IsLoopback() {
-		return true
-	}
-
-	noProxy := firstEnv("NO_PROXY", "no_proxy")
-	if noProxy == "" {
-		return false
-	}
-	for _, entry := range strings.Split(noProxy, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		if entry == "*" || strings.EqualFold(entry, host) || strings.EqualFold(entry, hostname) {
-			return true
-		}
-		if strings.HasPrefix(entry, ".") && strings.HasSuffix(hostname, entry) {
-			return true
-		}
-	}
-	return false
+	return httpproxy.FromEnvironment().ProxyFunc()(req.URL)
 }
 
 func isSocks5Proxy(proxyURL *url.URL) bool {
@@ -139,6 +77,9 @@ func socks5DialContext(proxyURL *url.URL) (func(context.Context, string, string)
 	if err != nil {
 		return nil, err
 	}
+	if contextDialer, ok := dialer.(proxy.ContextDialer); ok {
+		return contextDialer.DialContext, nil
+	}
 
 	return func(ctx context.Context, network string, address string) (net.Conn, error) {
 		type dialResult struct {
@@ -148,12 +89,18 @@ func socks5DialContext(proxyURL *url.URL) (func(context.Context, string, string)
 		result := make(chan dialResult, 1)
 		go func() {
 			conn, err := dialer.Dial(network, address)
-			result <- dialResult{conn: conn, err: err}
+			select {
+			case result <- dialResult{conn: conn, err: err}:
+			case <-ctx.Done():
+				if conn != nil {
+					conn.Close()
+				}
+			}
 		}()
 
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("socks5 dial canceled: %w", ctx.Err())
+			return nil, ctx.Err()
 		case res := <-result:
 			return res.conn, res.err
 		}

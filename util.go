@@ -17,9 +17,7 @@ func cloneMapArray(old map[string][]string) map[string][]string {
 	newMap := make(map[string][]string, len(old))
 	for k, vals := range old {
 		newMap[k] = make([]string, len(vals))
-		for i := range vals {
-			newMap[k][i] = vals[i]
-		}
+		copy(newMap[k], vals)
 	}
 	return newMap
 }

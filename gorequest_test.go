@@ -240,7 +240,7 @@ func TestMakeRequest(t *testing.T) {
 func TestGet(t *testing.T) {
 	const case1_empty = "/"
 	const case2_set_header = "/set_header"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is GET before going to check other features
 		if r.Method != GET {
 			t.Errorf("Expected method %q; got %q", GET, r.Method)
@@ -275,7 +275,7 @@ func TestGet(t *testing.T) {
 func TestGetWithClone(t *testing.T) {
 	const case1_empty = "/"
 	const case2_set_header = "/set_header"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is GET before going to check other features
 		if r.Method != GET {
 			t.Errorf("Expected method %q; got %q", GET, r.Method)
@@ -310,7 +310,7 @@ func TestGetWithClone(t *testing.T) {
 func TestGetWithCloneRequestAfterMake(t *testing.T) {
 	const case1_empty = "/"
 	const case2_set_header = "/set_header"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is GET before going to check other features
 		if r.Method != GET {
 			t.Errorf("Expected method %q; got %q", GET, r.Method)
@@ -349,7 +349,7 @@ func TestGetWithCloneWithHeadersAndQuery(t *testing.T) {
 	const case3_set_query = "/set_query"
 	const case4_set_both = "/set_both"
 	const case5_empty = "/empty"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is GET before going to check other features
 		if r.Method != GET {
 			t.Errorf("Expected method %q; got %q", GET, r.Method)
@@ -430,7 +430,7 @@ func TestConcurrently(t *testing.T) {
 	const case3_set_query = "/set_query"
 	const case4_set_both = "/set_both"
 	const case5_post = "/post"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is GET before going to check other features
 		if r.Method != GET && r.URL.Path != case5_post {
 			t.Errorf("Expected method %q; got %q", GET, r.Method)
@@ -484,7 +484,9 @@ func TestConcurrently(t *testing.T) {
 			if r.URL.Query().Get("iteration") == "" {
 				t.Errorf("Expected 'fourth' != %q; got %q", "", r.URL.Query().Get("iteration"))
 			}
-			r.ParseForm()
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("Unexpected form parse error: %s", err)
+			}
 			if r.Form.Get("form_iteration") == "" {
 				t.Errorf("Expected 'form_iteration' != %q; got %q", "", r.Form.Get("form_iteration"))
 			}
@@ -627,8 +629,10 @@ func TestOptions(t *testing.T) {
 
 // testing that resp.Body is reusable
 func TestResetBody(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Just some text"))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte("Just some text")); err != nil {
+			t.Fatalf("Unexpected write error: %s", err)
+		}
 	}))
 
 	defer ts.Close()
@@ -645,7 +649,7 @@ func TestParam(t *testing.T) {
 	paramCode := "123456"
 	paramFields := "f1;f2;f3"
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if r.Form.Get("code") != paramCode {
 			t.Errorf("Expected 'code' == %s; got %v", paramCode, r.Form.Get("code"))
 		}
@@ -694,7 +698,7 @@ const (
 // testing for POST method
 func testPostServer(t *testing.T) *httptest.Server {
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is POST before going to check other features
 		if r.Method != POST {
 			t.Errorf("Expected method %q; got %q", POST, r.Method)
@@ -1008,7 +1012,7 @@ func TestPost(t *testing.T) {
 func TestPostExplicitJSONStringPreservesRawBody(t *testing.T) {
 	const rawJSON = `{"z":"last","a":"first","m":{"b":2,"a":1}}`
 	var gotBody string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		body, _ := ioutil.ReadAll(r.Body)
 		gotBody = string(body)
@@ -1031,11 +1035,41 @@ func TestPostExplicitJSONStringPreservesRawBody(t *testing.T) {
 	}
 }
 
+func TestPostMultipleJSONStringsMergeObjects(t *testing.T) {
+	var gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, _ := ioutil.ReadAll(r.Body)
+		gotBody = string(body)
+	}))
+	defer ts.Close()
+
+	resp, _, errs := New().
+		Post(ts.URL).
+		Type("json").
+		Send(`{"a":1}`).
+		Send(`{"b":2}`).
+		End()
+	if len(errs) > 0 {
+		t.Fatalf("Unexpected request errors: %s", errs)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
+	}
+	var got map[string]int
+	if err := json.Unmarshal([]byte(gotBody), &got); err != nil {
+		t.Fatalf("Expected merged JSON object, got body %q: %s", gotBody, err)
+	}
+	if !reflect.DeepEqual(got, map[string]int{"a": 1, "b": 2}) {
+		t.Fatalf("Expected merged JSON object, got %v", got)
+	}
+}
+
 func TestPostByteSliceWithExplicitContentTypeSendsRawBody(t *testing.T) {
 	payload := []byte{0, 1, 2, 3, 255}
 	var gotBody []byte
 	var gotContentType string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		gotContentType = r.Header.Get("Content-Type")
 		defer r.Body.Close()
 		body, _ := ioutil.ReadAll(r.Body)
@@ -1286,7 +1320,7 @@ func TestMultipartRequest(t *testing.T) {
 	const case27_send_file_with_fieldname_with_spaces_only = "/send_file_with_fieldname_with_spaces_only"
 	const case28_send_file_with_file_as_fieldname_and_skip_file_numbering_true = "/send_file_with_file_as_fieldname_and_skip_file_numbering_true"
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is POST before going to check other features
 		if r.Method != POST {
 			t.Errorf("Expected method %q; got %q", POST, r.Method)
@@ -1843,7 +1877,7 @@ func TestPatch(t *testing.T) {
 	const case1_empty = "/"
 	const case2_set_header = "/set_header"
 	const case3_send_json = "/send_json"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is PATCH before going to check other features
 		if r.Method != PATCH {
 			t.Errorf("Expected method %q; got %q", PATCH, r.Method)
@@ -1904,7 +1938,7 @@ func TestQueryFunc(t *testing.T) {
 	const case2_send_struct = "/send_struct"
 	const case3_send_string_with_duplicates = "/send_string_with_duplicates"
 	const case4_send_map = "/send_map"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if r.Method != POST {
 			t.Errorf("Expected method %q; got %q", POST, r.Method)
 		}
@@ -1996,7 +2030,7 @@ func TestQueryFunc(t *testing.T) {
 
 func TestQueryPreservesRawQueryOrder(t *testing.T) {
 	var got []string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = append(got, r.URL.RawQuery)
 	}))
 	defer ts.Close()
@@ -2025,6 +2059,20 @@ func TestQueryPreservesRawQueryOrder(t *testing.T) {
 	}
 }
 
+func TestQueryDataDirectMutationStillBuildsQuery(t *testing.T) {
+	agent := New().Get("http://example.com")
+	agent.QueryData.Add("b", "1")
+	agent.QueryData.Add("a", "2")
+
+	req, err := agent.MakeRequest()
+	if err != nil {
+		t.Fatalf("Unexpected request creation error: %s", err)
+	}
+	if req.URL.RawQuery != "a=2&b=1" {
+		t.Fatalf("Expected direct QueryData mutation to be encoded, got %q", req.URL.RawQuery)
+	}
+}
+
 func TestQueryAcceptsStructPointer(t *testing.T) {
 	type queryPayload struct {
 		Query string `json:"query"`
@@ -2032,7 +2080,7 @@ func TestQueryAcceptsStructPointer(t *testing.T) {
 	}
 	payload := &queryPayload{Query: "value", Count: 6673221165400540161}
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("query") != "value" {
 			t.Fatalf("Expected query=value, got %q", r.URL.RawQuery)
 		}
@@ -2049,7 +2097,7 @@ func TestQueryAcceptsStructPointer(t *testing.T) {
 func TestRedirectPolicyFunc(t *testing.T) {
 	redirectSuccess := false
 	redirectFuncGetCalled := false
-	tsRedirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tsRedirect := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		redirectSuccess = true
 	}))
 	defer tsRedirect.Close()
@@ -2060,7 +2108,7 @@ func TestRedirectPolicyFunc(t *testing.T) {
 
 	New().
 		Get(ts.URL).
-		RedirectPolicy(func(req Request, via []Request) error {
+		RedirectPolicy(func(_ Request, _ []Request) error {
 			redirectFuncGetCalled = true
 			return nil
 		}).End()
@@ -2075,7 +2123,7 @@ func TestRedirectPolicyFunc(t *testing.T) {
 func TestRedirectStripsCustomAuthHeadersOnCrossHost(t *testing.T) {
 	var targetAPIKey string
 	var targetTrace string
-	tsRedirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tsRedirect := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		targetAPIKey = r.Header.Get("API-Key")
 		targetTrace = r.Header.Get("X-Trace")
 	}))
@@ -2107,9 +2155,11 @@ func TestRedirectStripsCustomAuthHeadersOnCrossHost(t *testing.T) {
 
 func TestEndBytes(t *testing.T) {
 	serverOutput := "hello world"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte(serverOutput))
+		if _, err := w.Write([]byte(serverOutput)); err != nil {
+			t.Fatalf("Unexpected write error: %s", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -2159,15 +2209,17 @@ func TestEndStruct(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected errors: %s", err)
 	}
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)
-		w.Write(serverOutput)
+		if _, err := w.Write(serverOutput); err != nil {
+			t.Fatalf("Unexpected write error: %s", err)
+		}
 	}))
 	defer ts.Close()
 
 	// Callback.
 	{
-		resp, bodyBytes, errs := New().Get(ts.URL).EndStruct(func(resp Response, v interface{}, body []byte, errs []error) {
+		resp, bodyBytes, errs := New().Get(ts.URL).EndStruct(func(resp Response, _ interface{}, body []byte, errs []error) {
 			if len(errs) > 0 {
 				t.Fatalf("Unexpected errors: %s", errs)
 			}
@@ -2213,14 +2265,14 @@ func TestEndStruct(t *testing.T) {
 }
 
 func TestProxyFunc(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "proxy passed")
 	}))
 	defer ts.Close()
 	// start proxy
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.OnRequest().DoFunc(
-		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		func(r *http.Request, _ *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			return r, nil
 		})
 	ts2 := httptest.NewServer(proxy)
@@ -2250,7 +2302,7 @@ func TestProxyFuncPostClone(t *testing.T) {
 	// start proxy
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.OnRequest().DoFunc(
-		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		func(r *http.Request, _ *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			r.URL.Path = "/proxy1"
 			return r, nil
 		})
@@ -2259,7 +2311,7 @@ func TestProxyFuncPostClone(t *testing.T) {
 
 	proxy2 := goproxy.NewProxyHttpServer()
 	proxy2.OnRequest().DoFunc(
-		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		func(r *http.Request, _ *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			r.URL.Path = "/proxy2"
 			return r, nil
 		})
@@ -2297,7 +2349,7 @@ func TestTimeoutFunc(t *testing.T) {
 		t.Errorf("Expected timeout in between 1000 -> 1500 ms | but got %d", elapsedTime)
 	}
 	// 2st case, read/write timeout (Can dial to url but want to timeout because too long operation on the server)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(1100 * time.Millisecond) // slightly longer than expected
 		w.WriteHeader(200)
 	}))
@@ -2312,7 +2364,7 @@ func TestTimeoutFunc(t *testing.T) {
 		t.Errorf("Expected timeout in between 1000 -> 1500 ms | but got %d", elapsedTime)
 	}
 	// 3rd case, testing reuse of same request
-	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(1100 * time.Millisecond) // slightly longer than expected
 		w.WriteHeader(200)
 	}))
@@ -2342,7 +2394,7 @@ func TestCookies(t *testing.T) {
 }
 
 func TestGetSetCookie(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if r.Method != GET {
 			t.Errorf("Expected method %q; got %q", GET, r.Method)
 		}
@@ -2364,7 +2416,7 @@ func TestGetSetCookie(t *testing.T) {
 }
 
 func TestGetSetCookies(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if r.Method != GET {
 			t.Errorf("Expected method %q; got %q", GET, r.Method)
 		}
@@ -2397,7 +2449,7 @@ func TestGetSetCookies(t *testing.T) {
 
 func TestErrorTypeWrongKey(t *testing.T) {
 	// defer afterTest(t)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "Hello, checkTypeWrongKey")
 	}))
 	defer ts.Close()
@@ -2420,7 +2472,7 @@ func TestErrorTypeWrongKey(t *testing.T) {
 func TestErrorThenReUseBase(t *testing.T) {
 	// defer afterTest(t)
 	requestCount := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requestCount++
 		if requestCount == 1 {
 			fmt.Fprintln(w, "Hello, checkTypeWrongKey")
@@ -2452,7 +2504,7 @@ func TestErrorThenReUseBase(t *testing.T) {
 }
 
 func TestBasicAuth(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header["Authorization"][0], " ", 2)
 		if len(auth) != 2 || auth[0] != "Basic" {
 			t.Error("bad syntax")
@@ -2471,7 +2523,7 @@ func TestBasicAuth(t *testing.T) {
 
 func TestBasicAuthCloneToDifferentAuths(t *testing.T) {
 	requestCount := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		requestCount++
 		auth := strings.SplitN(r.Header["Authorization"][0], " ", 2)
 		if len(auth) != 2 || auth[0] != "Basic" {
@@ -2503,7 +2555,7 @@ func TestBasicAuthCloneToDifferentAuths(t *testing.T) {
 }
 
 func TestBasicAuthCloneReuseAuth(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		auth := strings.SplitN(r.Header["Authorization"][0], " ", 2)
 		if len(auth) != 2 || auth[0] != "Basic" {
 			t.Error("bad syntax")
@@ -2528,7 +2580,7 @@ func TestBasicAuthCloneReuseAuth(t *testing.T) {
 
 func TestBasicAuthCloneOverrideAuth(t *testing.T) {
 	requestCount := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		requestCount++
 		auth := strings.SplitN(r.Header["Authorization"][0], " ", 2)
 		if len(auth) != 2 || auth[0] != "Basic" {
@@ -2562,7 +2614,7 @@ func TestBasicAuthCloneOverrideAuth(t *testing.T) {
 func TestXml(t *testing.T) {
 	xml := `<note><to>Tove</to><from>Jani</from><heading>Reminder</heading><body>Don't forget me this weekend!</body></note>`
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is PATCH before going to check other features
 		if r.Method != POST {
 			t.Errorf("Expected method %q; got %q", POST, r.Method)
@@ -2598,7 +2650,7 @@ func TestXml(t *testing.T) {
 func TestPlainText(t *testing.T) {
 	text := `hello world \r\n I am GoRequest`
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is PATCH before going to check other features
 		if r.Method != POST {
 			t.Errorf("Expected method %q; got %q", POST, r.Method)
@@ -2651,7 +2703,7 @@ func TestContentTypeInference(t *testing.T) {
 		{"text/xml", "json", "text/xml", "<a />"},
 	}
 	for _, test := range tests {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			// check method is PATCH before going to check other features
 			if r.Method != POST {
 				t.Errorf("Expected method %q; got %q", POST, r.Method)
@@ -2687,7 +2739,7 @@ func TestContentTypeInference(t *testing.T) {
 func TestAcceptMultipleTypes(t *testing.T) {
 	text := `hello world \r\n I am GoRequest`
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is PATCH before going to check other features
 		if r.Method != POST {
 			t.Errorf("Expected method %q; got %q", POST, r.Method)
@@ -2781,7 +2833,7 @@ func TestSetDebugByEnvironmentVar(t *testing.T) {
 func TestSetHeaders(t *testing.T) {
 	text := "hi"
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is PATCH before going to check other features
 		if r.Method != POST {
 			t.Errorf("Expected method %q; got %q", POST, r.Method)
@@ -2840,7 +2892,7 @@ func TestSetHeaders(t *testing.T) {
 func TestUserAgent(t *testing.T) {
 	text := "hi"
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// check method is PATCH before going to check other features
 		if r.Method != POST {
 			t.Errorf("Expected method %q; got %q", POST, r.Method)
@@ -2863,7 +2915,7 @@ func TestUserAgent(t *testing.T) {
 }
 
 func TestContext(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// check method is GET before going to check other features
 		time.Sleep(1 * time.Second)
 

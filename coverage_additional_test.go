@@ -87,6 +87,8 @@ func TestProxySupportsSOCKS5(t *testing.T) {
 
 func TestNewUsesProxyFromEnvironment(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:8888")
+	t.Setenv("HTTPS_PROXY", "")
+	t.Setenv("ALL_PROXY", "")
 	t.Setenv("NO_PROXY", "")
 
 	agent := New()
@@ -106,9 +108,48 @@ func TestNewUsesProxyFromEnvironment(t *testing.T) {
 	}
 }
 
+func TestProxyFromEnvironmentMatchesHTTPSProxyDefaults(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "")
+	t.Setenv("HTTPS_PROXY", "127.0.0.1:8888")
+	t.Setenv("ALL_PROXY", "")
+	t.Setenv("NO_PROXY", "")
+
+	agent := New()
+	req, err := http.NewRequest(GET, "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("Unexpected request creation error: %s", err)
+	}
+	proxyURL, err := agent.Transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("Unexpected proxy lookup error: %s", err)
+	}
+	if proxyURL.String() != "http://127.0.0.1:8888" {
+		t.Fatalf("Expected scheme-less HTTPS_PROXY to default to http, got %s", proxyURL)
+	}
+}
+
+func TestProxyFromEnvironmentMatchesNoProxyDomain(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:8888")
+	t.Setenv("HTTPS_PROXY", "")
+	t.Setenv("ALL_PROXY", "")
+	t.Setenv("NO_PROXY", "example.com")
+
+	agent := New()
+	req, err := http.NewRequest(GET, "http://api.example.com", nil)
+	if err != nil {
+		t.Fatalf("Unexpected request creation error: %s", err)
+	}
+	proxyURL, err := agent.Transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("Unexpected proxy lookup error: %s", err)
+	}
+	if proxyURL != nil {
+		t.Fatalf("Expected NO_PROXY=example.com to bypass subdomain, got %s", proxyURL)
+	}
+}
+
 func TestTimeoutsUpdatesTransportAndIgnoresNonTransport(t *testing.T) {
 	agent := New()
-	agent.Client.Transport = agent.Transport
 	agent.Timeouts(&Timeouts{
 		Dial:           time.Second,
 		KeepAlive:      2 * time.Second,
@@ -118,10 +159,7 @@ func TestTimeoutsUpdatesTransportAndIgnoresNonTransport(t *testing.T) {
 		IdleConn:       6 * time.Second,
 	})
 
-	transport, ok := agent.Client.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("Expected *http.Transport, got %T", agent.Client.Transport)
-	}
+	transport := agent.Transport
 	if transport.DialContext == nil {
 		t.Fatal("Expected Timeouts to configure DialContext")
 	}
@@ -136,6 +174,9 @@ func TestTimeoutsUpdatesTransportAndIgnoresNonTransport(t *testing.T) {
 	}
 	if transport.IdleConnTimeout != 6*time.Second {
 		t.Fatalf("Expected IdleConnTimeout=6s, got %s", transport.IdleConnTimeout)
+	}
+	if agent.Client.Transport != transport {
+		t.Fatal("Expected Timeouts to keep client and agent transports aligned")
 	}
 
 	nonTransport := New()

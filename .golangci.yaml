@@ -1,5 +1,19 @@
 run:
   timeout: 5m
+linters-settings:
+  depguard:
+    rules:
+      main:
+        list-mode: strict
+        files:
+          - $all
+        allow:
+          - $gostd
+          - github.com/elazarl/goproxy
+          - github.com/spf13/cast
+          - golang.org/x/net
+          - gopkg.in/h2non/gock.v1
+          - moul.io/http2curl
 linters:
   enable:
     - asciicheck
