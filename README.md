@@ -1,400 +1,91 @@
-GoRequest
-=========
+# GoRequest
 
+GoRequest is a chainable Go HTTP client inspired by SuperAgent for Node.js.
+It wraps the standard `net/http` package with a compact request builder for
+common client-side HTTP work.
 
-GoRequest -- Simplified HTTP client ( inspired by famous SuperAgent lib in Node.js )
+This repository is maintained as `github.com/wklken/gorequest`. It started as a
+fork of [parnurzeal/gorequest](https://github.com/parnurzeal/gorequest), but is
+now maintained independently with bug fixes, compatibility updates, and new
+features.
 
-![GopherGoRequest](https://raw.githubusercontent.com/parnurzeal/gorequest/gh-pages/images/Gopher_GoRequest_400x300.jpg)
+## Features
 
-#### "Shooting Requests like a Machine Gun" - Gopher
-
-Sending request has never been as fun nor easier than this. It comes with lots of features:
-
-* Get/Post/Put/Head/Delete/Patch/Options
-* Set - simple header setting
-* JSON - made it simple with JSON string as a parameter
-* Multipart-Support - send data and files as multipart request
-* Proxy - sending request via proxy
-* Timeout - setting timeout for a request
-* TLSClientConfig - taking control over tls where at least you can disable security check for https
-* RedirectPolicy
-* Cookie - setting cookies for your request
-* CookieJar - automatic in-memory cookiejar
-* BasicAuth - setting basic authentication header
-* more to come..
+- HTTP verbs: `GET`, `POST`, `PUT`, `HEAD`, `DELETE`, `PATCH`, `OPTIONS`, and custom methods
+- Query building from strings, maps, structs, and explicit key/value params
+- JSON, form, XML, text, and raw byte request bodies
+- Multipart form data and file uploads
+- Header replacement and repeated header appends
+- Cookies, cookie jars, and basic authentication
+- Proxy support, including environment proxy settings and SOCKS5 proxies
+- Request timeout, granular timeout, TLS, redirect, compression, and context controls
+- Retry support for selected HTTP status codes
+- String, byte slice, and JSON-decoded response helpers
+- Request/response debug logging, curl command output, HTTP tracing, and gock-based mocks
 
 ## Installation
 
-```bash
-$ go get github.com/wklken/gorequest
+```sh
+go get github.com/wklken/gorequest
 ```
 
-## Documentation
+The module declares Go 1.21 and is tested in CI across Go 1.21.x through
+1.26.x.
 
-See [Go Doc](http://godoc.org/github.com/wklken/gorequest) for usage and details.
-
-## Status
-
-[![Drone Build Status](https://drone.io/github.com/jmcvetta/restclient/status.png)](https://drone.io/github.com/wklken/gorequest/latest)
-[![Travis Build Status](https://travis-ci.org/wklken/gorequest.svg?branch=master)](https://travis-ci.org/wklken/gorequest)
-
-## Why should you use GoRequest?
-
-GoRequest makes thing much more simple for you, making http client more awesome and fun like SuperAgent + golang style usage.
-
-This is what you normally do for a simple GET without GoRequest:
+## Quick Start
 
 ```go
-resp, err := http.Get("http://example.com/")
-```
-
-With GoRequest:
-
-```go
-request := gorequest.New()
-resp, body, errs := request.Get("http://example.com/").End()
-```
-
-Or below if you don't want to reuse it for other requests.
-
-```go
-resp, body, errs := gorequest.New().Get("http://example.com/").End()
-```
-
-How about getting control over HTTP client headers, redirect policy, and etc. Things can quickly get more complicated in golang. You need to create a Client, set headers in a different command, ... just to do only one __GET__
-
-```go
-client := &http.Client{
-  CheckRedirect: redirectPolicyFunc,
-}
-
-req, err := http.NewRequest("GET", "http://example.com", nil)
-
-req.Header.Add("If-None-Match", `W/"wyzzy"`)
-resp, err := client.Do(req)
-```
-
-Why make things ugly while you can just do it as follows:
-
-```go
-request := gorequest.New()
-resp, body, errs := request.Get("http://example.com").
-  RedirectPolicy(redirectPolicyFunc).
-  Set("If-None-Match", `W/"wyzzy"`).
-  End()
-```
-
-__DELETE__, __HEAD__, __POST__, __PUT__, __PATCH__ are now supported and can be used in the same way as __GET__:
-
-```go
-request := gorequest.New()
-resp, body, errs := request.Post("http://example.com").End()
-// PUT -> request.Put("http://example.com").End()
-// DELETE -> request.Delete("http://example.com").End()
-// HEAD -> request.Head("http://example.com").End()
-// ANYTHING -> request.CustomMethod("TRACE", "http://example.com").End()
-```
-
-### JSON
-
-For a __JSON POST__ with standard libraries, you might need to marshal map data structure to json format, set headers to 'application/json' (and other headers if you need to) and declare http.Client. So, your code becomes longer and harder to maintain:
-
-```go
-m := map[string]interface{}{
-  "name": "backy",
-  "species": "dog",
-}
-mJson, _ := json.Marshal(m)
-contentReader := bytes.NewReader(mJson)
-req, _ := http.NewRequest("POST", "http://example.com", contentReader)
-req.Header.Set("Content-Type", "application/json")
-req.Header.Set("Notes","GoRequest is coming!")
-client := &http.Client{}
-resp, _ := client.Do(req)
-```
-
-Compared to our GoRequest version, JSON is for sure a default. So, it turns out to be just one simple line!:
-
-```go
-request := gorequest.New()
-resp, body, errs := request.Post("http://example.com").
-  Set("Notes","gorequest is coming!").
-  Send(`{"name":"backy", "species":"dog"}`).
-  End()
-```
-
-Moreover, it also supports struct type. So, you can have a fun __Mix & Match__ sending the different data types for your request:
-
-```go
-type BrowserVersionSupport struct {
-  Chrome string
-  Firefox string
-}
-ver := BrowserVersionSupport{ Chrome: "37.0.2041.6", Firefox: "30.0" }
-request := gorequest.New()
-resp, body, errs := request.Post("http://version.com/update").
-  Send(ver).
-  Send(`{"Safari":"5.1.10"}`).
-  End()
-```
-
-Not only for Send() but Query() is also supported. Just give it a try! :)
-
-## Callback
-
-Moreover, GoRequest also supports callback function. This gives you much more flexibility on using it. You can use it any way to match your own style!
-Let's see a bit of callback example:
-
-```go
-func printStatus(resp gorequest.Response, body string, errs []error){
-  fmt.Println(resp.Status)
-}
-gorequest.New().Get("http://example.com").End(printStatus)
-```
-
-## Multipart/Form-Data
-
-You can specify the content-type of the request to type `multipart` to send all data as `multipart/form-data`. This feature also allows you to send (multiple) files! Check the examples below!
-
-```go
-gorequest.New().Post("http://example.com/").
-  Type("multipart").
-  Send(`{"query1":"test"}`).
-  End()
-```
-
-The `SendFile` function accepts `strings` as path to a file, `[]byte` slice or even a `os.File`! You can also combine them to send multiple files with either custom name and/or custom fieldname:
-
-```go
-          f, _ := filepath.Abs("./file2.txt")
-bytesOfFile, _ := ioutil.ReadFile(f)
-
-gorequest.New().Post("http://example.com/").
-  Type("multipart").
-  SendFile("./file1.txt").
-  SendFile(bytesOfFile, "file2.txt", "my_file_fieldname").
-  End()
-```
-
-Check the docs for `SendFile` to get more information about the types of arguments.
-
-## Headers
-
-When setting one header to the request, the `Set` method can be used:
-
-```go
-gorequest.New().
-      Post("/gamelist").
-      Set("Accept", "application/json").
-      End()
-```
-
-This will clear all headers currently attached to a request and add the specified header.
-
-If there are multiple headers that must be appended to the request before sending, use `AppendHeader`. These can be chained together to add additional headers to the request:
-
-```go
-gorequest.New().
-      Post("/gamelist").
-      AppendHeader("Accept", "application/json").
-      AppendHeader("Accept", "text/plain").
-      End()
-```
-
-See the docs for the `Set` and `AppendHeader` methods for information about parameter and return types.
-
-## Proxy
-
-In the case when you are behind proxy, GoRequest can handle it easily with Proxy func:
-
-```go
-request := gorequest.New().Proxy("http://proxy:999")
-resp, body, errs := request.Get("http://example-proxy.com").End()
-// To reuse same client with no_proxy, use empty string:
-resp, body, errs = request.Proxy("").Get("http://example-no-proxy.com").End()
-```
-
-## Basic Authentication
-
-To add a basic authentication header:
-
-```go
-request := gorequest.New().SetBasicAuth("username", "password")
-resp, body, errs := request.Get("http://example-proxy.com").End()
-```
-
-## Timeout
-
-Timeout can be set in any time duration using time package:
-
-```go
-request := gorequest.New().Timeout(2*time.Millisecond)
-resp, body, errs:= request.Get("http://example.com").End()
-```
-
-Timeout func defines both dial + read/write timeout to the specified time parameter.
-
-## EndBytes
-
-Thanks to @jaytaylor, we now have EndBytes to use when you want the body as bytes.
-
-The callbacks work the same way as with `End`, except that a byte array is used instead of a string.
-
-```go
-resp, bodyBytes, errs := gorequest.New().Get("http://example.com/").EndBytes()
-```
-
-## EndStruct
-
-We now have EndStruct to use when you want the body as struct.
-
-The callbacks work the same way as with `End`, except that a struct is used instead of a string.
-
-Supposing the URL **http://example.com/** returns the body `{"hey":"you"}`
-
-```go
-heyYou struct {
-  Hey string `json:"hey"`
-}
-
-var heyYou heyYou
-
-resp, _, errs := gorequest.New().Get("http://example.com/").EndStruct(&heyYou)
-```
-
-## Retry
-
-Supposing you need retry 3 times, with 5 seconds between each attempt when gets a BadRequest or a InternalServerError
-
-```go
-request := gorequest.New()
-resp, body, errs := request.Get("http://example.com/").
-                    Retry(3, 5 * time.Second, http.StatusBadRequest, http.StatusInternalServerError).
-                    End()
-```
-
-## Handling Redirects
-
-Redirects can be handled with RedirectPolicy which behaves similarly to
-net/http Client's [CheckRedirect
-function](https://golang.org/pkg/net/http#Client). Simply specify a function
-which takes the Request about to be made and a slice of previous Requests in
-order of oldest first. When this function returns an error, the Request is not
-made.
-
-For example to redirect only to https endpoints:
-
-```go
-request := gorequest.New()
-resp, body, errs := request.Get("http://example.com/").
-                    RedirectPolicy(func(req Request, via []*Request) error {
-                      if req.URL.Scheme != "https" {
-                        return http.ErrUseLastResponse
-                      }
-                    }).
-                    End()
-```
-
-
-## Clone
-
-You can reuse settings of a Request by cloning it _before_ making any requests. This can be useful if you wish to re-use the SuperAgent across multiple requests without worrying about concurrency or having too many Transports being created.
-
-Clones will copy the same settings (headers, query, etc..), but will only shallow copy any "Data" given to it. They will also share the same Transport and http.Client.
-
-```go
-baseRequest := gorequest.New()
-// apply anything you want to these settings. Eg:
-baseRequest.Timeout(10 * time.Millisecond).
-  BasicAuth("user", "password")
-
-// then reuse the base request elsewhere, cloning before modifying or using it.
-resp, body, errs := baseRequest.Clone().Get("http://exmaple.com/").End()
-```
-
-## Mock
-
-You can mock the response of gorequest via [gock](https://github.com/h2non/gock)
-
-```go
-func TestMock(t *testing.T) {
-	defer gock.Off()
-
-	gock.New("http://foo.com").
-		Get("/bar").
-		Reply(200).
-		JSON(map[string]string{"foo": "bar"})
-
-	resp, body, errs := New().Mock().Get("http://foo.com/bar").SetDebug(true).End()
-	if len(errs) != 0 {
-		t.Fatalf("Expected no error, got error")
-	}
-	if resp.StatusCode != 200 {
-		t.Fatalf("Expected status code 200, got %d", resp.StatusCode)
+package main
+
+import (
+	"fmt"
+
+	"github.com/wklken/gorequest"
+)
+
+func main() {
+	resp, body, errs := gorequest.New().
+		Get("https://example.com").
+		End()
+	if len(errs) > 0 {
+		panic(errs[0])
 	}
 
-	if strings.Trim(body, " \n") != `{"foo":"bar"}` {
-		t.Fatalf("Expected body `{\"foo\":\"bar\"}`, got `%s`", body)
-	}
+	fmt.Println(resp.StatusCode)
+	fmt.Println(body)
 }
 ```
 
-## Debug
+Most methods return `*SuperAgent`, so request setup can be chained. `End`
+returns the response, response body as a string, and a slice of errors.
 
-For debugging, GoRequest leverages `httputil` to dump details of every request/response. (Thanks to @dafang)
+## Usage
 
-You can just use `SetDebug` or environment variable `GOREQUEST_DEBUG=0|1` to enable/disable debug mode and `SetLogger` to set your own choice of logger.
+Detailed usage examples live in [docs/usage.md](docs/usage.md).
 
-Thanks to @QuentinPerez, we can see even how gorequest is compared to CURL by using `SetCurlCommand`.
+API reference is available at
+[pkg.go.dev/github.com/wklken/gorequest](https://pkg.go.dev/github.com/wklken/gorequest).
 
-## Noted
-As the underlying gorequest is based on http.Client in most use cases, gorequest.New() should be called once and reuse gorequest as much as possible.
+## Development
 
-## Contributing to GoRequest:
+This is a single-package Go library. The usual local checks are:
 
-If you find any improvement or issue you want to fix, feel free to send me a pull request with testing.
+```sh
+go test ./...
+go test -v ./...
+make test
+```
 
-Thanks to all contributors thus far:
+The [Makefile](Makefile) captures the standard local commands.
 
+## Lineage and Credits
 
-|   Contributors                        |
-|---------------------------------------|
-| https://github.com/alaingilbert       |
-| https://github.com/austinov           |
-| https://github.com/coderhaoxin        |
-| https://github.com/codegoalie         |
-| https://github.com/dafang             |
-| https://github.com/davyzhang          |
-| https://github.com/dickeyxxx          |
-| https://github.com/figlief            |
-| https://github.com/fraenky8           |
-| https://github.com/franciscocpg       |
-| https://github.com/heytitle           |
-| https://github.com/hownowstephen      |
-| https://github.com/kemadz             |
-| https://github.com/killix             |
-| https://github.com/jaytaylor          |
-| https://github.com/na-ga              |
-| https://github.com/piotrmiskiewicz    |
-| https://github.com/pencil001          |
-| https://github.com/pkopac             |
-| https://github.com/quangbuule         |
-| https://github.com/QuentinPerez       |
-| https://github.com/smallnest          |
-| https://github.com/WaveCutz           |
-| https://github.com/xild               |
-| https://github.com/yangmls            |
-| https://github.com/6david9            |
-| https://github.com/wklken             |
+GoRequest was originally created by
+[parnurzeal/gorequest](https://github.com/parnurzeal/gorequest).
 
-
-Also, co-maintainer is needed here. If anyone is interested, please email me (wklken at gmail.com)
-
-## Credits
-
-* Renee French - the creator of Gopher mascot
-* [Wisi Mongkhonsrisawat](https://www.facebook.com/puairw) for providing an awesome GoRequest's Gopher image :)
+The GoRequest gopher image used by the original project was credited to Wisi
+Mongkhonsrisawat, and the Go gopher mascot was created by Renee French.
 
 ## License
 
-GoRequest is MIT License.
+GoRequest is released under the [MIT License](LICENSE).
