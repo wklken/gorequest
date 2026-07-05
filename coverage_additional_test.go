@@ -334,6 +334,17 @@ func TestCustomMethodAndMakeRequestEdges(t *testing.T) {
 		t.Fatalf("Expected request Host to be overridden, got %q", req.Host)
 	}
 
+	req, err = New().Get("http://example.com").
+		AppendHeader("Host", "bad.example.com").
+		AppendHeader("Host", "api.example.com").
+		MakeRequest()
+	if err != nil {
+		t.Fatalf("Unexpected MakeRequest error with repeated Host header: %s", err)
+	}
+	if req.Host != "api.example.com" {
+		t.Fatalf("Expected repeated Host header to use the last value, got %q", req.Host)
+	}
+
 	agent := New().Get("http://example.com")
 	agent.TargetType = "bad-type"
 	if _, err := agent.MakeRequest(); err == nil {
