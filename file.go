@@ -85,6 +85,10 @@ type File struct {
 //	  SendFile(b, "filename", "my_custom_fieldname", false, "mime_type").
 //	  End()
 func (s *SuperAgent) SendFile(file any, args ...any) *SuperAgent {
+	if file == nil {
+		s.Errors = append(s.Errors, errors.New("sendFile func: nil file"))
+		return s
+	}
 
 	filename := ""
 	fieldname := "file"
@@ -107,7 +111,11 @@ func (s *SuperAgent) SendFile(file any, args ...any) *SuperAgent {
 
 	if len(args) >= 3 {
 		argSkipFileNumbering := reflect.ValueOf(args[2])
-		if argSkipFileNumbering.Type().Name() == "bool" {
+		if !argSkipFileNumbering.IsValid() {
+			s.Errors = append(s.Errors, errors.New("the fourth SendFile method argument for skipFileNumbering cannot be nil"))
+			return s
+		}
+		if argSkipFileNumbering.Kind() == reflect.Bool {
 			skipFileNumbering = argSkipFileNumbering.Interface().(bool)
 		}
 	}
@@ -127,7 +135,8 @@ func (s *SuperAgent) SendFile(file any, args ...any) *SuperAgent {
 		fieldname = "file" + strconv.Itoa(len(s.FileData)+1)
 	}
 
-	switch v := reflect.ValueOf(file); v.Kind() {
+	v := reflect.ValueOf(file)
+	switch v.Kind() {
 	case reflect.String:
 		pathToFile, err := filepath.Abs(v.String())
 		if err != nil {
@@ -149,7 +158,10 @@ func (s *SuperAgent) SendFile(file any, args ...any) *SuperAgent {
 			Data:      data,
 		})
 	case reflect.Slice:
-		slice := makeSliceOfReflectValue(v)
+		if v.Type().Elem().Kind() != reflect.Uint8 {
+			s.Errors = append(s.Errors, errors.New("sendFile currently only supports byte slices as file content"))
+			return s
+		}
 		if filename == "" {
 			filename = "filename"
 		}
@@ -157,13 +169,17 @@ func (s *SuperAgent) SendFile(file any, args ...any) *SuperAgent {
 			Filename:  filename,
 			Fieldname: fieldname,
 			MimeType:  fileType,
-			Data:      make([]byte, len(slice)),
+			Data:      make([]byte, v.Len()),
 		}
-		for i := range slice {
-			f.Data[i] = slice[i].(byte)
+		for i := 0; i < v.Len(); i++ {
+			f.Data[i] = byte(v.Index(i).Uint())
 		}
 		s.FileData = append(s.FileData, f)
 	case reflect.Pointer:
+		if v.IsNil() {
+			s.Errors = append(s.Errors, errors.New("sendFile func: nil pointer"))
+			return s
+		}
 		if len(args) == 1 {
 			return s.SendFile(v.Elem().Interface(), args[0])
 		}

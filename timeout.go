@@ -1,6 +1,7 @@
 package gorequest
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -23,6 +24,11 @@ type Timeouts struct {
 }
 
 func (s *SuperAgent) Timeouts(timeouts *Timeouts) *SuperAgent {
+	if timeouts == nil {
+		s.Errors = append(s.Errors, errors.New("timeouts func: nil timeouts"))
+		return s
+	}
+
 	s.safeModifyHttpClient()
 
 	var transport *http.Transport

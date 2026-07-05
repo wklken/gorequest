@@ -494,7 +494,13 @@ func (s *SuperAgent) parseOrderedQueryString(content string) error {
 //	  End()
 func (s *SuperAgent) Send(content any) *SuperAgent {
 	// TODO: add normal text mode or other mode to Send func
-	switch v := reflect.ValueOf(content); v.Kind() {
+	v := reflect.ValueOf(content)
+	if !v.IsValid() {
+		s.Errors = append(s.Errors, fmt.Errorf("send func: nil content"))
+		return s
+	}
+
+	switch v.Kind() {
 	case reflect.String:
 		s.SendString(v.String())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64: // includes rune
@@ -518,6 +524,10 @@ func (s *SuperAgent) Send(content any) *SuperAgent {
 	case reflect.Array:
 		s.SendSlice(makeSliceOfReflectValue(v))
 	case reflect.Pointer:
+		if v.IsNil() {
+			s.Errors = append(s.Errors, fmt.Errorf("send func: nil pointer"))
+			return s
+		}
 		s.Send(v.Elem().Interface())
 	case reflect.Map:
 		s.SendMap(v.Interface())

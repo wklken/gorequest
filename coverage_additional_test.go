@@ -188,6 +188,82 @@ func TestTimeoutsUpdatesTransportAndIgnoresNonTransport(t *testing.T) {
 	}
 }
 
+func TestInvalidHelperInputsRecordErrorsWithoutPanic(t *testing.T) {
+	assertNoPanic := func(t *testing.T, fn func()) {
+		t.Helper()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("Expected invalid input to record an error, got panic: %v", recovered)
+			}
+		}()
+		fn()
+	}
+	assertError := func(t *testing.T, agent *SuperAgent) {
+		t.Helper()
+		if len(agent.Errors) == 0 {
+			t.Fatal("Expected invalid input to record an error")
+		}
+	}
+
+	t.Run("send nil content", func(t *testing.T) {
+		agent := New()
+		assertNoPanic(t, func() {
+			agent.Send(nil)
+		})
+		assertError(t, agent)
+	})
+
+	t.Run("send nil pointer", func(t *testing.T) {
+		var payload *testStruct
+		agent := New()
+		assertNoPanic(t, func() {
+			agent.Send(payload)
+		})
+		assertError(t, agent)
+	})
+
+	t.Run("send file nil content", func(t *testing.T) {
+		agent := New()
+		assertNoPanic(t, func() {
+			agent.SendFile(nil)
+		})
+		assertError(t, agent)
+	})
+
+	t.Run("send file nil pointer", func(t *testing.T) {
+		var path *string
+		agent := New()
+		assertNoPanic(t, func() {
+			agent.SendFile(path)
+		})
+		assertError(t, agent)
+	})
+
+	t.Run("send file nil optional bool", func(t *testing.T) {
+		agent := New()
+		assertNoPanic(t, func() {
+			agent.SendFile([]byte("file"), "name", "field", nil)
+		})
+		assertError(t, agent)
+	})
+
+	t.Run("send file non byte slice", func(t *testing.T) {
+		agent := New()
+		assertNoPanic(t, func() {
+			agent.SendFile([]string{"not-bytes"})
+		})
+		assertError(t, agent)
+	})
+
+	t.Run("nil granular timeouts", func(t *testing.T) {
+		agent := New()
+		assertNoPanic(t, func() {
+			agent.Timeouts(nil)
+		})
+		assertError(t, agent)
+	})
+}
+
 func TestCurlCommandLoggingAndAsCurlErrors(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if _, err := io.WriteString(w, "ok"); err != nil {
