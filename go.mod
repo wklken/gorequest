@@ -13,4 +13,5 @@ require (
 require (
 	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
 	github.com/smartystreets/goconvey v1.7.2 // indirect
+	golang.org/x/text v0.3.6 // indirect
 )

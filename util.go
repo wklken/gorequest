@@ -18,9 +18,7 @@ func cloneMapArray(old map[string][]string) map[string][]string {
 	newMap := make(map[string][]string, len(old))
 	for k, vals := range old {
 		newMap[k] = make([]string, len(vals))
-		for i := range vals {
-			newMap[k][i] = vals[i]
-		}
+		copy(newMap[k], vals)
 	}
 	return newMap
 }
@@ -41,6 +39,24 @@ func shallowCopyDataSlice(old []any) []any {
 		return nil
 	}
 	newData := make([]any, len(old))
+	copy(newData, old)
+	return newData
+}
+
+func shallowCopyBytes(old []byte) []byte {
+	if old == nil {
+		return nil
+	}
+	newData := make([]byte, len(old))
+	copy(newData, old)
+	return newData
+}
+
+func shallowCopyQueryParams(old []queryParam) []queryParam {
+	if old == nil {
+		return nil
+	}
+	newData := make([]queryParam, len(old))
 	copy(newData, old)
 	return newData
 }

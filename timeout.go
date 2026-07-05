@@ -25,9 +25,18 @@ type Timeouts struct {
 func (s *SuperAgent) Timeouts(timeouts *Timeouts) *SuperAgent {
 	s.safeModifyHttpClient()
 
-	transport, ok := s.Client.Transport.(*http.Transport)
-	if !ok {
-		return s
+	var transport *http.Transport
+	if s.Client.Transport != nil {
+		clientTransport, ok := s.Client.Transport.(*http.Transport)
+		if !ok {
+			return s
+		}
+		transport = clientTransport
+		s.Transport = transport
+	} else {
+		s.safeModifyTransport()
+		transport = s.Transport
+		s.Client.Transport = transport
 	}
 
 	transport.DialContext = (&net.Dialer{
@@ -38,7 +47,7 @@ func (s *SuperAgent) Timeouts(timeouts *Timeouts) *SuperAgent {
 	transport.TLSHandshakeTimeout = timeouts.TlsHandshake
 	transport.ResponseHeaderTimeout = timeouts.ResponseHeader
 	transport.ExpectContinueTimeout = timeouts.ExpectContinue
-	transport.ExpectContinueTimeout = timeouts.IdleConn
+	transport.IdleConnTimeout = timeouts.IdleConn
 
 	s.Client.Transport = transport
 

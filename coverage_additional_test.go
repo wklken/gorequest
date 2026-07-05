@@ -72,9 +72,84 @@ func TestConfigurationSettersAndCloneIsolation(t *testing.T) {
 	}
 }
 
+func TestProxySupportsSOCKS5(t *testing.T) {
+	agent := New().Proxy("socks5://user:pass@127.0.0.1:1080")
+	if len(agent.Errors) > 0 {
+		t.Fatalf("Unexpected SOCKS5 proxy errors: %s", agent.Errors)
+	}
+	if agent.Transport.Proxy != nil {
+		t.Fatal("Expected SOCKS5 proxy to bypass http.Transport Proxy")
+	}
+	if agent.Transport.DialContext == nil {
+		t.Fatal("Expected SOCKS5 proxy to configure DialContext")
+	}
+}
+
+func TestNewUsesProxyFromEnvironment(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:8888")
+	t.Setenv("HTTPS_PROXY", "")
+	t.Setenv("ALL_PROXY", "")
+	t.Setenv("NO_PROXY", "")
+
+	agent := New()
+	req, err := http.NewRequest(GET, "http://example.com", nil)
+	if err != nil {
+		t.Fatalf("Unexpected request creation error: %s", err)
+	}
+	if agent.Transport.Proxy == nil {
+		t.Fatal("Expected default transport to use ProxyFromEnvironment")
+	}
+	proxyURL, err := agent.Transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("Unexpected proxy lookup error: %s", err)
+	}
+	if proxyURL.String() != "http://127.0.0.1:8888" {
+		t.Fatalf("Expected HTTP_PROXY URL, got %s", proxyURL)
+	}
+}
+
+func TestProxyFromEnvironmentMatchesHTTPSProxyDefaults(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "")
+	t.Setenv("HTTPS_PROXY", "127.0.0.1:8888")
+	t.Setenv("ALL_PROXY", "")
+	t.Setenv("NO_PROXY", "")
+
+	agent := New()
+	req, err := http.NewRequest(GET, "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("Unexpected request creation error: %s", err)
+	}
+	proxyURL, err := agent.Transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("Unexpected proxy lookup error: %s", err)
+	}
+	if proxyURL.String() != "http://127.0.0.1:8888" {
+		t.Fatalf("Expected scheme-less HTTPS_PROXY to default to http, got %s", proxyURL)
+	}
+}
+
+func TestProxyFromEnvironmentMatchesNoProxyDomain(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:8888")
+	t.Setenv("HTTPS_PROXY", "")
+	t.Setenv("ALL_PROXY", "")
+	t.Setenv("NO_PROXY", "example.com")
+
+	agent := New()
+	req, err := http.NewRequest(GET, "http://api.example.com", nil)
+	if err != nil {
+		t.Fatalf("Unexpected request creation error: %s", err)
+	}
+	proxyURL, err := agent.Transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("Unexpected proxy lookup error: %s", err)
+	}
+	if proxyURL != nil {
+		t.Fatalf("Expected NO_PROXY=example.com to bypass subdomain, got %s", proxyURL)
+	}
+}
+
 func TestTimeoutsUpdatesTransportAndIgnoresNonTransport(t *testing.T) {
 	agent := New()
-	agent.Client.Transport = agent.Transport
 	agent.Timeouts(&Timeouts{
 		Dial:           time.Second,
 		KeepAlive:      2 * time.Second,
@@ -84,10 +159,7 @@ func TestTimeoutsUpdatesTransportAndIgnoresNonTransport(t *testing.T) {
 		IdleConn:       6 * time.Second,
 	})
 
-	transport, ok := agent.Client.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("Expected *http.Transport, got %T", agent.Client.Transport)
-	}
+	transport := agent.Transport
 	if transport.DialContext == nil {
 		t.Fatal("Expected Timeouts to configure DialContext")
 	}
@@ -96,6 +168,15 @@ func TestTimeoutsUpdatesTransportAndIgnoresNonTransport(t *testing.T) {
 	}
 	if transport.ResponseHeaderTimeout != 4*time.Second {
 		t.Fatalf("Expected ResponseHeaderTimeout=4s, got %s", transport.ResponseHeaderTimeout)
+	}
+	if transport.ExpectContinueTimeout != 5*time.Second {
+		t.Fatalf("Expected ExpectContinueTimeout=5s, got %s", transport.ExpectContinueTimeout)
+	}
+	if transport.IdleConnTimeout != 6*time.Second {
+		t.Fatalf("Expected IdleConnTimeout=6s, got %s", transport.IdleConnTimeout)
+	}
+	if agent.Client.Transport != transport {
+		t.Fatal("Expected Timeouts to keep client and agent transports aligned")
 	}
 
 	nonTransport := New()
@@ -186,6 +267,51 @@ func TestEndStructDecodeErrors(t *testing.T) {
 	agent.Errors = []error{errors.New("preflight")}
 	if resp, body, errs := agent.EndStruct(&jsonResult); resp != nil || body != nil || len(errs) != 1 {
 		t.Fatalf("Expected preflight error to short-circuit EndStruct, got resp=%v body=%v errs=%v", resp, body, errs)
+	}
+}
+
+func TestEndStructAllowsEmptyBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", MIMEJSON)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	var result heyYou
+	resp, body, errs := New().Get(ts.URL).EndStruct(&result)
+	if len(errs) > 0 {
+		t.Fatalf("Expected empty body to decode without errors, got %s", errs)
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("Expected status 204, got %d", resp.StatusCode)
+	}
+	if len(body) != 0 {
+		t.Fatalf("Expected empty body, got %q", string(body))
+	}
+}
+
+func TestEndStructTrimsUTF8BOMForDecode(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", MIMEJSON)
+		if _, err := w.Write([]byte("\xef\xbb\xbf" + `{"hey":"you"}`)); err != nil {
+			t.Fatalf("Unexpected write error: %s", err)
+		}
+	}))
+	defer ts.Close()
+
+	var result heyYou
+	resp, body, errs := New().Get(ts.URL).EndStruct(&result)
+	if len(errs) > 0 {
+		t.Fatalf("Expected BOM-prefixed JSON to decode without errors, got %s", errs)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
+	}
+	if result.Hey != "you" {
+		t.Fatalf("Expected decoded struct field hey=you, got %q", result.Hey)
+	}
+	if !bytes.HasPrefix(body, []byte("\xef\xbb\xbf")) {
+		t.Fatalf("Expected returned body to keep BOM prefix, got %q", string(body))
 	}
 }
 

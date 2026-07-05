@@ -26,6 +26,11 @@ import (
 type Request *http.Request
 type Response *http.Response
 
+type queryParam struct {
+	Key   string
+	Value string
+}
+
 // A SuperAgent is a object storing all request data for client.
 type SuperAgent struct {
 	Url                  string
@@ -37,9 +42,11 @@ type SuperAgent struct {
 	SliceData            []any
 	FormData             url.Values
 	QueryData            url.Values
+	QueryParamOrder      []queryParam
 	FileData             []File
 	BounceToRawString    bool
 	RawString            string
+	RawBytes             []byte
 	Client               *http.Client
 	Transport            *http.Transport
 	Cookies              []*http.Cookie
@@ -64,7 +71,10 @@ func newHttpClient() *http.Client {
 		PublicSuffixList: publicsuffix.List,
 	}
 	jar, _ := cookiejar.New(&cookiejarOptions)
-	return &http.Client{Jar: jar}
+	return &http.Client{
+		Jar:           jar,
+		CheckRedirect: defaultRedirectPolicy,
+	}
 }
 
 // New used to create a new SuperAgent object.
@@ -79,10 +89,11 @@ func New() *SuperAgent {
 		SliceData:         []any{},
 		FormData:          url.Values{},
 		QueryData:         url.Values{},
+		QueryParamOrder:   []queryParam{},
 		FileData:          make([]File, 0),
 		BounceToRawString: false,
 		Client:            newHttpClient(),
-		Transport:         &http.Transport{},
+		Transport:         &http.Transport{Proxy: proxyFromEnvironment},
 		Cookies:           make([]*http.Cookie, 0),
 		Errors:            nil,
 		BasicAuth:         basicAuth{},
@@ -120,9 +131,11 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		SliceData:            shallowCopyDataSlice(s.SliceData),
 		FormData:             url.Values(cloneMapArray(s.FormData)),
 		QueryData:            url.Values(cloneMapArray(s.QueryData)),
+		QueryParamOrder:      shallowCopyQueryParams(s.QueryParamOrder),
 		FileData:             shallowCopyFileArray(s.FileData),
 		BounceToRawString:    s.BounceToRawString,
 		RawString:            s.RawString,
+		RawBytes:             shallowCopyBytes(s.RawBytes),
 		Client:               s.Client,
 		Transport:            s.Transport,
 		Cookies:              shallowCopyCookies(s.Cookies),
@@ -171,9 +184,11 @@ func (s *SuperAgent) ClearSuperAgent() {
 	s.SliceData = []any{}
 	s.FormData = url.Values{}
 	s.QueryData = url.Values{}
+	s.QueryParamOrder = []queryParam{}
 	s.FileData = make([]File, 0)
 	s.BounceToRawString = false
 	s.RawString = ""
+	s.RawBytes = nil
 	s.ForceType = ""
 	s.TargetType = TypeJSON
 	s.Cookies = make([]*http.Cookie, 0)
@@ -332,6 +347,12 @@ func (s *SuperAgent) Query(content any) *SuperAgent {
 		s.queryStruct(v.Interface())
 	case reflect.Map:
 		s.queryMap(v.Interface())
+	case reflect.Ptr:
+		if v.IsNil() {
+			s.Errors = append(s.Errors, fmt.Errorf("query func: nil pointer"))
+		} else {
+			s.Query(v.Elem().Interface())
+		}
 	default:
 	}
 	return s
@@ -366,7 +387,7 @@ func (s *SuperAgent) queryStruct(content any) *SuperAgent {
 					}
 					queryVal = BytesToString(j)
 				}
-				s.QueryData.Add(k, queryVal)
+				s.addQueryParam(k, queryVal)
 			}
 		}
 	}
@@ -377,19 +398,12 @@ func (s *SuperAgent) queryString(content string) *SuperAgent {
 	var val map[string]string
 	if err := json.Unmarshal(StringToBytes(content), &val); err == nil {
 		for k, v := range val {
-			s.QueryData.Add(k, v)
+			s.addQueryParam(k, v)
 		}
 	} else {
-		if queryData, err := url.ParseQuery(content); err == nil {
-			for k, queryValues := range queryData {
-				for _, queryValue := range queryValues {
-					s.QueryData.Add(k, queryValue)
-				}
-			}
-		} else {
+		if err := s.parseOrderedQueryString(content); err != nil {
 			s.Errors = append(s.Errors, err)
 		}
-		// TODO: need to check correct format of 'field=val&field=val&...'
 	}
 	return s
 }
@@ -402,8 +416,36 @@ func (s *SuperAgent) queryMap(content any) *SuperAgent {
 // Thus, Query won't accept ; in a querystring if we provide something like fields=f1;f2;f3
 // This Param is then created as an alternative method to solve this.
 func (s *SuperAgent) Param(key string, value string) *SuperAgent {
-	s.QueryData.Add(key, value)
+	s.addQueryParam(key, value)
 	return s
+}
+
+func (s *SuperAgent) addQueryParam(key string, value string) {
+	s.QueryData.Add(key, value)
+	s.QueryParamOrder = append(s.QueryParamOrder, queryParam{Key: key, Value: value})
+}
+
+func (s *SuperAgent) parseOrderedQueryString(content string) error {
+	if content == "" {
+		return nil
+	}
+
+	for _, part := range strings.Split(content, "&") {
+		if part == "" {
+			continue
+		}
+		key, value, _ := strings.Cut(part, "=")
+		decodedKey, err := url.QueryUnescape(key)
+		if err != nil {
+			return err
+		}
+		decodedValue, err := url.QueryUnescape(value)
+		if err != nil {
+			return err
+		}
+		s.addQueryParam(decodedKey, decodedValue)
+	}
+	return nil
 }
 
 // Send function accepts either json string or query strings which is usually used to assign data to POST or PUT method.
@@ -468,7 +510,11 @@ func (s *SuperAgent) Send(content any) *SuperAgent {
 	case reflect.Struct:
 		s.SendStruct(v.Interface())
 	case reflect.Slice:
-		s.SendSlice(makeSliceOfReflectValue(v))
+		if bytes, ok := content.([]byte); ok && s.shouldSendRawBytes() {
+			s.SendBytes(bytes)
+		} else {
+			s.SendSlice(makeSliceOfReflectValue(v))
+		}
 	case reflect.Array:
 		s.SendSlice(makeSliceOfReflectValue(v))
 	case reflect.Pointer:
@@ -491,6 +537,17 @@ func (s *SuperAgent) SendSlice(content []any) *SuperAgent {
 
 func (s *SuperAgent) SendMap(content any) *SuperAgent {
 	return s.SendStruct(content)
+}
+
+// SendBytes sends content as a raw request body.
+func (s *SuperAgent) SendBytes(content []byte) *SuperAgent {
+	s.RawBytes = shallowCopyBytes(content)
+	return s
+}
+
+func (s *SuperAgent) shouldSendRawBytes() bool {
+	contentType := filterFlags(s.Header.Get("Content-Type"))
+	return contentType != "" && contentType != MIMEJSON && contentType != Types[TypeForm]
 }
 
 // SendStruct (similar to SendString) returns SuperAgent's itself for any next chain and takes content any as a parameter.
@@ -517,6 +574,15 @@ func (s *SuperAgent) SendStruct(content any) *SuperAgent {
 // Its duty is to transform String into s.Data (map[string]any) which later changes into appropriate format such as json, form, text, etc. in the End func.
 // Send implicitly uses SendString and you should use Send instead of this.
 func (s *SuperAgent) SendString(content string) *SuperAgent {
+	if s.shouldPreserveRawJSONString(content) {
+		if s.mergePreservedJSONObjects(content) {
+			return s
+		}
+		s.BounceToRawString = true
+		s.RawString += content
+		return s
+	}
+
 	if !s.BounceToRawString {
 		var val any
 		d := json.NewDecoder(strings.NewReader(content))
@@ -567,6 +633,48 @@ func (s *SuperAgent) SendString(content string) *SuperAgent {
 	// Dump all contents to RawString in case in the end user doesn't want json or form.
 	s.RawString += content
 	return s
+}
+
+func (s *SuperAgent) shouldPreserveRawJSONString(content string) bool {
+	if s.ForceType != TypeJSON && filterFlags(s.Header.Get("Content-Type")) != MIMEJSON {
+		return false
+	}
+	_, ok := decodeJSONObject(content)
+	return ok
+}
+
+func (s *SuperAgent) mergePreservedJSONObjects(content string) bool {
+	if !s.BounceToRawString || s.RawString == "" {
+		return false
+	}
+
+	existing, ok := decodeJSONObject(s.RawString)
+	if !ok {
+		return false
+	}
+	incoming, ok := decodeJSONObject(content)
+	if !ok {
+		return false
+	}
+	for k, v := range existing {
+		s.Data[k] = v
+	}
+	for k, v := range incoming {
+		s.Data[k] = v
+	}
+	s.BounceToRawString = false
+	s.RawString += content
+	return true
+}
+
+func decodeJSONObject(content string) (map[string]interface{}, bool) {
+	var val map[string]interface{}
+	d := json.NewDecoder(strings.NewReader(content))
+	d.UseNumber()
+	if err := d.Decode(&val); err != nil {
+		return nil, false
+	}
+	return val, true
 }
 
 // End is the most important function that you need to call when ending the chain. The request won't proceed without calling it.
@@ -629,7 +737,11 @@ func (s *SuperAgent) EndStruct(v any, callback ...func(response Response, v any,
 		return nil, body, errs
 	}
 
-	err := json.Unmarshal(body, &v)
+	if len(body) == 0 {
+		return resp, body, nil
+	}
+
+	err := json.Unmarshal(bytes.TrimPrefix(body, StringToBytes("\xef\xbb\xbf")), &v)
 	if err != nil {
 		respContentType := filterFlags(resp.Header.Get("Content-Type"))
 		if respContentType != MIMEJSON {
@@ -750,112 +862,125 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 	//
 	//     https://github.com/parnurzeal/gorequest/pull/136
 	//
-	switch s.TargetType {
-	case TypeJSON:
-		// If-case to give support to json array. we check if
-		// 1) Map only: send it as json map from s.Data
-		// 2) Array or Mix of map & array or others: send it as rawstring from s.RawString
-		var contentJson []byte
-		if s.BounceToRawString {
-			contentJson = StringToBytes(s.RawString)
-		} else if len(s.Data) != 0 {
-			contentJson, _ = json.Marshal(s.Data)
-		} else if len(s.SliceData) != 0 {
-			contentJson, _ = json.Marshal(s.SliceData)
-		}
-		if contentJson != nil {
-			contentReader = bytes.NewReader(contentJson)
-			contentType = "application/json"
-		}
-	case TypeForm, TypeFormData, TypeUrlencoded:
-		var contentForm []byte
-		if s.BounceToRawString || len(s.SliceData) != 0 {
-			contentForm = StringToBytes(s.RawString)
-		} else {
-			formData := changeMapToURLValues(s.Data)
-			contentForm = StringToBytes(formData.Encode())
-		}
-		if len(contentForm) != 0 {
-			contentReader = bytes.NewReader(contentForm)
-			contentType = "application/x-www-form-urlencoded"
-		}
-	case TypeText:
-		if len(s.RawString) != 0 {
-			contentReader = strings.NewReader(s.RawString)
-			contentType = "text/plain"
-		}
-	case TypeXML:
-		if len(s.RawString) != 0 {
-			contentReader = strings.NewReader(s.RawString)
-			contentType = "application/xml"
-		}
-	case TypeMultipart:
-		var (
-			buf = &bytes.Buffer{}
-			mw  = multipart.NewWriter(buf)
-		)
-
-		if s.BounceToRawString {
-			fieldName := s.Header.Get("data_fieldname")
-			if fieldName == "" {
-				fieldName = "data"
+	if s.RawBytes != nil {
+		contentReader = bytes.NewReader(s.RawBytes)
+		contentType = "application/octet-stream"
+	} else {
+		switch s.TargetType {
+		case TypeJSON:
+			// If-case to give support to json array. we check if
+			// 1) Map only: send it as json map from s.Data
+			// 2) Array or Mix of map & array or others: send it as rawstring from s.RawString
+			var contentJson []byte
+			if s.BounceToRawString {
+				contentJson = StringToBytes(s.RawString)
+			} else if len(s.Data) != 0 {
+				contentJson, _ = json.Marshal(s.Data)
+			} else if len(s.SliceData) != 0 {
+				contentJson, _ = json.Marshal(s.SliceData)
 			}
-			fw, _ := mw.CreateFormField(fieldName)
-			fw.Write(StringToBytes(s.RawString))
-			contentReader = buf
-		}
+			if contentJson != nil {
+				contentReader = bytes.NewReader(contentJson)
+				contentType = "application/json"
+			}
+		case TypeForm, TypeFormData, TypeUrlencoded:
+			var contentForm []byte
+			if s.BounceToRawString || len(s.SliceData) != 0 {
+				contentForm = StringToBytes(s.RawString)
+			} else {
+				formData := changeMapToURLValues(s.Data)
+				contentForm = StringToBytes(formData.Encode())
+			}
+			if len(contentForm) != 0 {
+				contentReader = bytes.NewReader(contentForm)
+				contentType = "application/x-www-form-urlencoded"
+			}
+		case TypeText:
+			if len(s.RawString) != 0 {
+				contentReader = strings.NewReader(s.RawString)
+				contentType = "text/plain"
+			}
+		case TypeXML:
+			if len(s.RawString) != 0 {
+				contentReader = strings.NewReader(s.RawString)
+				contentType = "application/xml"
+			}
+		case TypeMultipart:
+			var (
+				buf = &bytes.Buffer{}
+				mw  = multipart.NewWriter(buf)
+			)
 
-		if len(s.Data) != 0 {
-			formData := changeMapToURLValues(s.Data)
-			for key, values := range formData {
-				for _, value := range values {
-					fw, _ := mw.CreateFormField(key)
-					fw.Write(StringToBytes(value))
+			if s.BounceToRawString {
+				fieldName := s.Header.Get("data_fieldname")
+				if fieldName == "" {
+					fieldName = "data"
 				}
+				fw, _ := mw.CreateFormField(fieldName)
+				if _, err := fw.Write(StringToBytes(s.RawString)); err != nil {
+					return nil, err
+				}
+				contentReader = buf
 			}
-			contentReader = buf
-		}
 
-		if len(s.SliceData) != 0 {
-			fieldName := s.Header.Get("json_fieldname")
-			if fieldName == "" {
-				fieldName = "data"
+			if len(s.Data) != 0 {
+				formData := changeMapToURLValues(s.Data)
+				for key, values := range formData {
+					for _, value := range values {
+						fw, _ := mw.CreateFormField(key)
+						if _, err := fw.Write(StringToBytes(value)); err != nil {
+							return nil, err
+						}
+					}
+				}
+				contentReader = buf
 			}
-			// copied from CreateFormField() in mime/multipart/writer.go
-			h := make(textproto.MIMEHeader)
-			fieldName = strings.Replace(strings.Replace(fieldName, "\\", "\\\\", -1), `"`, "\\\"", -1)
-			h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"`, fieldName))
-			h.Set("Content-Type", "application/json")
-			fw, _ := mw.CreatePart(h)
-			contentJson, err := json.Marshal(s.SliceData)
-			if err != nil {
-				return nil, err
+
+			if len(s.SliceData) != 0 {
+				fieldName := s.Header.Get("json_fieldname")
+				if fieldName == "" {
+					fieldName = "data"
+				}
+				// copied from CreateFormField() in mime/multipart/writer.go
+				h := make(textproto.MIMEHeader)
+				fieldName = strings.Replace(strings.Replace(fieldName, "\\", "\\\\", -1), `"`, "\\\"", -1)
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"`, fieldName))
+				h.Set("Content-Type", "application/json")
+				fw, _ := mw.CreatePart(h)
+				contentJson, err := json.Marshal(s.SliceData)
+				if err != nil {
+					return nil, err
+				}
+				if _, err := fw.Write(contentJson); err != nil {
+					return nil, err
+				}
+				contentReader = buf
 			}
-			fw.Write(contentJson)
-			contentReader = buf
-		}
 
-		// add the files
-		if len(s.FileData) != 0 {
-			for _, file := range s.FileData {
-				fw, _ := CreateFormFile(mw, file.Fieldname, file.Filename, file.MimeType)
-				fw.Write(file.Data)
+			// add the files
+			if len(s.FileData) != 0 {
+				for _, file := range s.FileData {
+					fw, _ := CreateFormFile(mw, file.Fieldname, file.Filename, file.MimeType)
+					if _, err := fw.Write(file.Data); err != nil {
+						return nil, err
+					}
+				}
+				contentReader = buf
 			}
-			contentReader = buf
-		}
 
-		// close before call to FormDataContentType ! otherwise, it's not valid multipart
-		mw.Close()
+			// close before call to FormDataContentType ! otherwise, it's not valid multipart
+			mw.Close()
 
-		if contentReader != nil {
-			contentType = mw.FormDataContentType()
+			if contentReader != nil {
+				contentType = mw.FormDataContentType()
+			}
+		case "":
+			contentType = ""
+			contentReader = nil
+		default:
+			// let's return an error instead of an nil pointer exception here
+			return nil, fmt.Errorf("TargetType '%s' could not be determined", s.TargetType)
 		}
-	case "":
-		contentType = ""
-		contentReader = nil
-	default:
-		// let's return an error instead of an nil pointer exception here
-		return nil, fmt.Errorf("TargetType '%s' could not be determined", s.TargetType)
 	}
 
 	if req, err = http.NewRequest(s.Method, s.Url, contentReader); err != nil {
@@ -887,14 +1012,15 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	// Add all querystring from Query func
-	q := req.URL.Query()
-	for k, v := range s.QueryData {
-		for _, vv := range v {
-			q.Add(k, vv)
+	// Add all querystring from Query func while preserving caller order.
+	if len(s.QueryParamOrder) != 0 || len(s.QueryData) != 0 {
+		encodedQuery := encodeQueryParams(s.QueryParamOrder, s.QueryData)
+		if req.URL.RawQuery == "" {
+			req.URL.RawQuery = encodedQuery
+		} else if encodedQuery != "" {
+			req.URL.RawQuery += "&" + encodedQuery
 		}
 	}
-	req.URL.RawQuery = q.Encode()
 
 	// Add basic auth
 	if s.BasicAuth != (basicAuth{}) {
@@ -907,6 +1033,35 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 	}
 
 	return req, nil
+}
+
+func encodeQueryParams(params []queryParam, queryData url.Values) string {
+	encoded := make([]string, 0, len(params))
+	remaining := url.Values(cloneMapArray(queryData))
+	for _, param := range params {
+		encoded = append(encoded, url.QueryEscape(param.Key)+"="+url.QueryEscape(param.Value))
+		removeQueryParam(remaining, param)
+	}
+	if fallback := remaining.Encode(); fallback != "" {
+		encoded = append(encoded, fallback)
+	}
+	return strings.Join(encoded, "&")
+}
+
+func removeQueryParam(values url.Values, param queryParam) {
+	queryValues, ok := values[param.Key]
+	if !ok {
+		return
+	}
+	for i, value := range queryValues {
+		if value == param.Value {
+			values[param.Key] = append(queryValues[:i], queryValues[i+1:]...)
+			if len(values[param.Key]) == 0 {
+				delete(values, param.Key)
+			}
+			return
+		}
+	}
 }
 
 // we don't want to mess up other clones when we modify the client..
