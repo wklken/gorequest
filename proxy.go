@@ -1,11 +1,15 @@
 package gorequest
 
 import (
+	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+
+	"golang.org/x/net/proxy"
 )
 
 // Proxy function accepts a proxy url string to setup proxy url for any request.
@@ -30,9 +34,20 @@ func (s *SuperAgent) Proxy(proxyUrl string) *SuperAgent {
 	} else if proxyUrl == "" {
 		s.safeModifyTransport()
 		s.Transport.Proxy = nil
+		s.Transport.DialContext = nil
+	} else if isSocks5Proxy(parsedProxyUrl) {
+		s.safeModifyTransport()
+		dialContext, err := socks5DialContext(parsedProxyUrl)
+		if err != nil {
+			s.Errors = append(s.Errors, err)
+			return s
+		}
+		s.Transport.Proxy = nil
+		s.Transport.DialContext = dialContext
 	} else {
 		s.safeModifyTransport()
 		s.Transport.Proxy = http.ProxyURL(parsedProxyUrl)
+		s.Transport.DialContext = nil
 	}
 	return s
 }
@@ -103,4 +118,44 @@ func bypassProxy(hostname, host string) bool {
 		}
 	}
 	return false
+}
+
+func isSocks5Proxy(proxyURL *url.URL) bool {
+	scheme := strings.ToLower(proxyURL.Scheme)
+	return scheme == "socks5" || scheme == "socks5h"
+}
+
+func socks5DialContext(proxyURL *url.URL) (func(context.Context, string, string) (net.Conn, error), error) {
+	var auth *proxy.Auth
+	if proxyURL.User != nil {
+		password, _ := proxyURL.User.Password()
+		auth = &proxy.Auth{
+			User:     proxyURL.User.Username(),
+			Password: password,
+		}
+	}
+
+	dialer, err := proxy.SOCKS5("tcp", proxyURL.Host, auth, proxy.Direct)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(ctx context.Context, network string, address string) (net.Conn, error) {
+		type dialResult struct {
+			conn net.Conn
+			err  error
+		}
+		result := make(chan dialResult, 1)
+		go func() {
+			conn, err := dialer.Dial(network, address)
+			result <- dialResult{conn: conn, err: err}
+		}()
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("socks5 dial canceled: %w", ctx.Err())
+		case res := <-result:
+			return res.conn, res.err
+		}
+	}, nil
 }

@@ -72,6 +72,19 @@ func TestConfigurationSettersAndCloneIsolation(t *testing.T) {
 	}
 }
 
+func TestProxySupportsSOCKS5(t *testing.T) {
+	agent := New().Proxy("socks5://user:pass@127.0.0.1:1080")
+	if len(agent.Errors) > 0 {
+		t.Fatalf("Unexpected SOCKS5 proxy errors: %s", agent.Errors)
+	}
+	if agent.Transport.Proxy != nil {
+		t.Fatal("Expected SOCKS5 proxy to bypass http.Transport Proxy")
+	}
+	if agent.Transport.DialContext == nil {
+		t.Fatal("Expected SOCKS5 proxy to configure DialContext")
+	}
+}
+
 func TestNewUsesProxyFromEnvironment(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:8888")
 	t.Setenv("NO_PROXY", "")
