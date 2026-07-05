@@ -27,6 +27,11 @@ import (
 type Request *http.Request
 type Response *http.Response
 
+type queryParam struct {
+	Key   string
+	Value string
+}
+
 // A SuperAgent is a object storing all request data for client.
 type SuperAgent struct {
 	Url                  string
@@ -38,6 +43,7 @@ type SuperAgent struct {
 	SliceData            []interface{}
 	FormData             url.Values
 	QueryData            url.Values
+	QueryParamOrder      []queryParam
 	FileData             []File
 	BounceToRawString    bool
 	RawString            string
@@ -83,6 +89,7 @@ func New() *SuperAgent {
 		SliceData:         []interface{}{},
 		FormData:          url.Values{},
 		QueryData:         url.Values{},
+		QueryParamOrder:   []queryParam{},
 		FileData:          make([]File, 0),
 		BounceToRawString: false,
 		Client:            newHttpClient(),
@@ -124,6 +131,7 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		SliceData:            shallowCopyDataSlice(s.SliceData),
 		FormData:             url.Values(cloneMapArray(s.FormData)),
 		QueryData:            url.Values(cloneMapArray(s.QueryData)),
+		QueryParamOrder:      shallowCopyQueryParams(s.QueryParamOrder),
 		FileData:             shallowCopyFileArray(s.FileData),
 		BounceToRawString:    s.BounceToRawString,
 		RawString:            s.RawString,
@@ -175,6 +183,7 @@ func (s *SuperAgent) ClearSuperAgent() {
 	s.SliceData = []interface{}{}
 	s.FormData = url.Values{}
 	s.QueryData = url.Values{}
+	s.QueryParamOrder = []queryParam{}
 	s.FileData = make([]File, 0)
 	s.BounceToRawString = false
 	s.RawString = ""
@@ -370,7 +379,7 @@ func (s *SuperAgent) queryStruct(content interface{}) *SuperAgent {
 					}
 					queryVal = BytesToString(j)
 				}
-				s.QueryData.Add(k, queryVal)
+				s.addQueryParam(k, queryVal)
 			}
 		}
 	}
@@ -381,19 +390,12 @@ func (s *SuperAgent) queryString(content string) *SuperAgent {
 	var val map[string]string
 	if err := json.Unmarshal(StringToBytes(content), &val); err == nil {
 		for k, v := range val {
-			s.QueryData.Add(k, v)
+			s.addQueryParam(k, v)
 		}
 	} else {
-		if queryData, err := url.ParseQuery(content); err == nil {
-			for k, queryValues := range queryData {
-				for _, queryValue := range queryValues {
-					s.QueryData.Add(k, queryValue)
-				}
-			}
-		} else {
+		if err := s.parseOrderedQueryString(content); err != nil {
 			s.Errors = append(s.Errors, err)
 		}
-		// TODO: need to check correct format of 'field=val&field=val&...'
 	}
 	return s
 }
@@ -406,8 +408,36 @@ func (s *SuperAgent) queryMap(content interface{}) *SuperAgent {
 // Thus, Query won't accept ; in a querystring if we provide something like fields=f1;f2;f3
 // This Param is then created as an alternative method to solve this.
 func (s *SuperAgent) Param(key string, value string) *SuperAgent {
-	s.QueryData.Add(key, value)
+	s.addQueryParam(key, value)
 	return s
+}
+
+func (s *SuperAgent) addQueryParam(key string, value string) {
+	s.QueryData.Add(key, value)
+	s.QueryParamOrder = append(s.QueryParamOrder, queryParam{Key: key, Value: value})
+}
+
+func (s *SuperAgent) parseOrderedQueryString(content string) error {
+	if content == "" {
+		return nil
+	}
+
+	for _, part := range strings.Split(content, "&") {
+		if part == "" {
+			continue
+		}
+		key, value, _ := strings.Cut(part, "=")
+		decodedKey, err := url.QueryUnescape(key)
+		if err != nil {
+			return err
+		}
+		decodedValue, err := url.QueryUnescape(value)
+		if err != nil {
+			return err
+		}
+		s.addQueryParam(decodedKey, decodedValue)
+	}
+	return nil
 }
 
 // Send function accepts either json string or query strings which is usually used to assign data to POST or PUT method.
@@ -891,14 +921,15 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	// Add all querystring from Query func
-	q := req.URL.Query()
-	for k, v := range s.QueryData {
-		for _, vv := range v {
-			q.Add(k, vv)
+	// Add all querystring from Query func while preserving caller order.
+	if len(s.QueryParamOrder) != 0 {
+		encodedQuery := encodeQueryParams(s.QueryParamOrder)
+		if req.URL.RawQuery == "" {
+			req.URL.RawQuery = encodedQuery
+		} else {
+			req.URL.RawQuery += "&" + encodedQuery
 		}
 	}
-	req.URL.RawQuery = q.Encode()
 
 	// Add basic auth
 	if s.BasicAuth != (basicAuth{}) {
@@ -911,6 +942,14 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 	}
 
 	return req, nil
+}
+
+func encodeQueryParams(params []queryParam) string {
+	encoded := make([]string, 0, len(params))
+	for _, param := range params {
+		encoded = append(encoded, url.QueryEscape(param.Key)+"="+url.QueryEscape(param.Value))
+	}
+	return strings.Join(encoded, "&")
 }
 
 // we don't want to mess up other clones when we modify the client..

@@ -1937,6 +1937,37 @@ func TestQueryFunc(t *testing.T) {
 		End()
 }
 
+func TestQueryPreservesRawQueryOrder(t *testing.T) {
+	var got []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.RawQuery)
+	}))
+	defer ts.Close()
+
+	New().Get(ts.URL+"?existing=0").
+		Param("b", "1").
+		Param("a", "2").
+		End()
+
+	New().Get(ts.URL).
+		Query("z=last&a=first").
+		Query("m=middle").
+		End()
+
+	New().Post(ts.URL + "?123").
+		Type("multipart").
+		End()
+
+	expected := []string{
+		"existing=0&b=1&a=2",
+		"z=last&a=first&m=middle",
+		"123",
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("Expected raw queries %v, got %v", expected, got)
+	}
+}
+
 // TODO: more tests on redirect
 func TestRedirectPolicyFunc(t *testing.T) {
 	redirectSuccess := false
