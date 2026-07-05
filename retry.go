@@ -3,6 +3,7 @@ package gorequest
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -56,6 +57,32 @@ func (s *SuperAgent) shouldRetry(resp Response, hasError bool) bool {
 		return true
 	}
 	return false
+}
+
+func (s *SuperAgent) getResponseBytesWithRetry() (Response, []byte, []error) {
+	var (
+		errs []error
+		resp Response
+		body []byte
+	)
+
+	for {
+		resp, body, errs = s.getResponseBytes()
+		if !s.shouldRetry(resp, len(errs) > 0) {
+			s.setRetryCountHeader(resp)
+			break
+		}
+
+		s.Errors = nil
+	}
+
+	return resp, body, errs
+}
+
+func (s *SuperAgent) setRetryCountHeader(resp Response) {
+	if resp != nil {
+		resp.Header.Set("Retry-Count", strconv.Itoa(s.Retryable.Attempt))
+	}
 }
 
 // just need to change the array pointer?
