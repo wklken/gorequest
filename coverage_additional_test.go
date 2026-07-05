@@ -209,6 +209,31 @@ func TestEndStructAllowsEmptyBody(t *testing.T) {
 	}
 }
 
+func TestEndStructTrimsUTF8BOMForDecode(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", MIMEJSON)
+		if _, err := w.Write([]byte("\xef\xbb\xbf" + `{"hey":"you"}`)); err != nil {
+			t.Fatalf("Unexpected write error: %s", err)
+		}
+	}))
+	defer ts.Close()
+
+	var result heyYou
+	resp, body, errs := New().Get(ts.URL).EndStruct(&result)
+	if len(errs) > 0 {
+		t.Fatalf("Expected BOM-prefixed JSON to decode without errors, got %s", errs)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
+	}
+	if result.Hey != "you" {
+		t.Fatalf("Expected decoded struct field hey=you, got %q", result.Hey)
+	}
+	if !bytes.HasPrefix(body, []byte("\xef\xbb\xbf")) {
+		t.Fatalf("Expected returned body to keep BOM prefix, got %q", string(body))
+	}
+}
+
 func TestCustomMethodAndMakeRequestEdges(t *testing.T) {
 	for _, method := range []string{GET, POST, HEAD, PUT, DELETE, PATCH, OPTIONS, "TRACE"} {
 		req, err := New().CustomMethod(method, "http://example.com/path").MakeRequest()

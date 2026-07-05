@@ -680,7 +680,7 @@ func (s *SuperAgent) EndStruct(v interface{}, callback ...func(response Response
 		return resp, body, nil
 	}
 
-	err := json.Unmarshal(body, &v)
+	err := json.Unmarshal(bytes.TrimPrefix(body, StringToBytes("\xef\xbb\xbf")), &v)
 	if err != nil {
 		respContentType := filterFlags(resp.Header.Get("Content-Type"))
 		if respContentType != MIMEJSON {
