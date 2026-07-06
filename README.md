@@ -13,7 +13,7 @@ features.
 
 - HTTP verbs: `GET`, `POST`, `PUT`, `HEAD`, `DELETE`, `PATCH`, `OPTIONS`, and custom methods
 - Query building from strings, maps, structs, and explicit key/value params
-- JSON, form, XML, text, and raw byte request bodies
+- JSON, form, XML, text, and raw byte request bodies with JSON encoding options
 - Multipart form data and file uploads
 - Header replacement and repeated header appends
 - Cookies, cookie jars, and basic authentication

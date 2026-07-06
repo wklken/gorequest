@@ -1065,6 +1065,56 @@ func TestPostMultipleJSONStringsMergeObjects(t *testing.T) {
 	}
 }
 
+func TestJSONOptionsControlsHTMLEscape(t *testing.T) {
+	req, err := New().
+		Post("http://example.com").
+		Send(map[string]string{"html": "<div>&</div>"}).
+		MakeRequest()
+	if err != nil {
+		t.Fatalf("Unexpected MakeRequest error: %s", err)
+	}
+	defaultBody, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("Unexpected body read error: %s", err)
+	}
+	if string(defaultBody) != `{"html":"\u003cdiv\u003e\u0026\u003c/div\u003e"}` {
+		t.Fatalf("Expected default JSON body to escape HTML, got %s", defaultBody)
+	}
+
+	req, err = New().
+		SetJSONOptions(JSONOptions{DisableHTMLEscape: true}).
+		Post("http://example.com").
+		Send(map[string]string{"html": "<div>&</div>"}).
+		MakeRequest()
+	if err != nil {
+		t.Fatalf("Unexpected MakeRequest error: %s", err)
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("Unexpected body read error: %s", err)
+	}
+	if string(body) != `{"html":"<div>&</div>"}` {
+		t.Fatalf("Expected JSON body to preserve HTML characters, got %s", body)
+	}
+}
+
+func TestJSONSendPreservesLargeIntegerPrecision(t *testing.T) {
+	req, err := New().
+		Post("http://example.com").
+		Send(`{"id":9007199254740993}`).
+		MakeRequest()
+	if err != nil {
+		t.Fatalf("Unexpected MakeRequest error: %s", err)
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("Unexpected body read error: %s", err)
+	}
+	if string(body) != `{"id":9007199254740993}` {
+		t.Fatalf("Expected large integer precision to be preserved, got %s", body)
+	}
+}
+
 func TestPostByteSliceWithExplicitContentTypeSendsRawBody(t *testing.T) {
 	payload := []byte{0, 1, 2, 3, 255}
 	var gotBody []byte

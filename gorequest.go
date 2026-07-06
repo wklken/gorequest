@@ -31,6 +31,11 @@ type queryParam struct {
 	Value string
 }
 
+// JSONOptions controls JSON request body encoding.
+type JSONOptions struct {
+	DisableHTMLEscape bool
+}
+
 // A SuperAgent is a object storing all request data for client.
 type SuperAgent struct {
 	Url                  string
@@ -38,6 +43,7 @@ type SuperAgent struct {
 	Header               http.Header
 	TargetType           string
 	ForceType            string
+	JSONOptions          JSONOptions
 	Data                 map[string]any
 	SliceData            []any
 	FormData             url.Values
@@ -130,6 +136,7 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		Header:               http.Header(cloneMapArray(s.Header)),
 		TargetType:           s.TargetType,
 		ForceType:            s.ForceType,
+		JSONOptions:          s.JSONOptions,
 		Data:                 shallowCopyData(s.Data),
 		SliceData:            shallowCopyDataSlice(s.SliceData),
 		FormData:             url.Values(cloneMapArray(s.FormData)),
@@ -167,6 +174,12 @@ func (s *SuperAgent) Context(ctx context.Context) *SuperAgent {
 // SetDoNotClearSuperAgent enable the DoNotClear mode for not clearing super agent and reuse for the next request.
 func (s *SuperAgent) SetDoNotClearSuperAgent(enable bool) *SuperAgent {
 	s.DoNotClearSuperAgent = enable
+	return s
+}
+
+// SetJSONOptions sets JSON request body encoding options.
+func (s *SuperAgent) SetJSONOptions(options JSONOptions) *SuperAgent {
+	s.JSONOptions = options
 	return s
 }
 
@@ -892,9 +905,9 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 			if s.BounceToRawString {
 				contentJson = StringToBytes(s.RawString)
 			} else if len(s.Data) != 0 {
-				contentJson, _ = json.Marshal(s.Data)
+				contentJson, _ = marshalRequestJSON(s.Data, s.JSONOptions)
 			} else if len(s.SliceData) != 0 {
-				contentJson, _ = json.Marshal(s.SliceData)
+				contentJson, _ = marshalRequestJSON(s.SliceData, s.JSONOptions)
 			}
 			if contentJson != nil {
 				contentReader = bytes.NewReader(contentJson)
@@ -964,7 +977,7 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"`, fieldName))
 				h.Set("Content-Type", "application/json")
 				fw, _ := mw.CreatePart(h)
-				contentJson, err := json.Marshal(s.SliceData)
+				contentJson, err := marshalRequestJSON(s.SliceData, s.JSONOptions)
 				if err != nil {
 					return nil, err
 				}
@@ -1079,6 +1092,20 @@ func removeQueryParam(values url.Values, param queryParam) {
 			return
 		}
 	}
+}
+
+func marshalRequestJSON(content any, options JSONOptions) ([]byte, error) {
+	if !options.DisableHTMLEscape {
+		return json.Marshal(content)
+	}
+
+	buf := &bytes.Buffer{}
+	encoder := json.NewEncoder(buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(content); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
 // we don't want to mess up other clones when we modify the client..
