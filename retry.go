@@ -12,8 +12,12 @@ type superAgentRetryable struct {
 	RetryerTime     time.Duration
 	RetryerCount    int
 	Attempt         int
+	Policy          RetryPolicy
 	Enable          bool
 }
+
+// RetryPolicy decides whether a completed request attempt should be retried.
+type RetryPolicy func(resp Response, body []byte, errs []error) bool
 
 // Retry is used for setting a Retryer policy
 // Example. To set Retryer policy with 5 seconds between each attempt.
@@ -38,25 +42,43 @@ func (s *SuperAgent) Retry(retryerCount int, retryerTime time.Duration, statusCo
 		RetryerTime     time.Duration
 		RetryerCount    int
 		Attempt         int
+		Policy          RetryPolicy
 		Enable          bool
 	}{
 		statusCode,
 		retryerTime,
 		retryerCount,
 		0,
+		s.Retryable.Policy,
 		true,
 	}
 	return s
 }
 
-func (s *SuperAgent) shouldRetry(resp Response, hasError bool) bool {
-	if s.Retryable.Enable && s.Retryable.Attempt < s.Retryable.RetryerCount &&
-		(hasError || statusesContains(s.Retryable.RetryableStatus, resp.StatusCode)) {
+// SetRetryPolicy sets a custom policy for deciding whether an attempt should be retried.
+func (s *SuperAgent) SetRetryPolicy(policy RetryPolicy) *SuperAgent {
+	s.Retryable.Policy = policy
+	return s
+}
+
+func (s *SuperAgent) shouldRetry(resp Response, body []byte, errs []error) bool {
+	if !s.Retryable.Enable || s.Retryable.Attempt >= s.Retryable.RetryerCount {
+		return false
+	}
+
+	if s.retryPolicyMatched(resp, body, errs) {
 		time.Sleep(s.Retryable.RetryerTime)
 		s.Retryable.Attempt++
 		return true
 	}
 	return false
+}
+
+func (s *SuperAgent) retryPolicyMatched(resp Response, body []byte, errs []error) bool {
+	if s.Retryable.Policy != nil {
+		return s.Retryable.Policy(resp, body, errs)
+	}
+	return len(errs) > 0 || statusesContains(s.Retryable.RetryableStatus, resp.StatusCode)
 }
 
 func (s *SuperAgent) getResponseBytesWithRetry() (Response, []byte, []error) {
@@ -68,7 +90,7 @@ func (s *SuperAgent) getResponseBytesWithRetry() (Response, []byte, []error) {
 
 	for {
 		resp, body, errs = s.getResponseBytes()
-		if !s.shouldRetry(resp, len(errs) > 0) {
+		if !s.shouldRetry(resp, body, errs) {
 			s.setRetryCountHeader(resp)
 			break
 		}

@@ -609,6 +609,54 @@ func TestRetryGet(t *testing.T) {
 	}
 }
 
+func TestRetryPolicyUsesResponseDetails(t *testing.T) {
+	var attempts int
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != GET {
+			t.Errorf("Expected method %q; got %q", GET, r.Method)
+		}
+		attempts++
+		if attempts < 3 {
+			w.Header().Set("X-Retry", "yes")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write([]byte("retry body")); err != nil {
+				t.Errorf("Unexpected write error: %s", err)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte("done")); err != nil {
+			t.Errorf("Unexpected write error: %s", err)
+		}
+	}))
+	defer ts.Close()
+
+	resp, body, errs := New().Get(ts.URL).
+		Retry(4, 1*time.Nanosecond).
+		SetRetryPolicy(func(resp Response, body []byte, errs []error) bool {
+			if len(errs) > 0 || resp == nil {
+				return false
+			}
+			return resp.StatusCode == http.StatusOK &&
+				resp.Header.Get("X-Retry") == "yes" &&
+				string(body) == "retry body"
+		}).
+		End()
+	if errs != nil {
+		t.Fatalf("Expected retry policy request to succeed, got %v", errs)
+	}
+	if attempts != 3 {
+		t.Fatalf("Expected 3 attempts, got %d", attempts)
+	}
+	if body != "done" {
+		t.Fatalf("Expected final body %q, got %q", "done", body)
+	}
+	if retryCount := resp.Header.Get("Retry-Count"); retryCount != "2" {
+		t.Fatalf("Expected Retry-Count 2, got %q", retryCount)
+	}
+}
+
 // testing for Options method
 func TestOptions(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
