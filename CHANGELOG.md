@@ -1,6 +1,28 @@
 GoRequest Changelog
 =========
 
+## GoRequest v2.0.0 (2026-07-06)
+
+### BREAKING CHANGES
+
+- Support Go 1.21 through 1.26; the module now declares Go 1.21.
+
+### BUGFIXES
+
+- fix open upstream gorequest bug reports https://github.com/wklken/gorequest/pull/44
+- port upstream Host handling and update dependencies https://github.com/wklken/gorequest/pull/46
+- guard invalid helper inputs https://github.com/wklken/gorequest/pull/47
+- fix clone client transport race https://github.com/wklken/gorequest/pull/48
+
+### ENHANCEMENTS
+
+- modernize Go syntax https://github.com/wklken/gorequest/pull/43
+- add upload progress callback https://github.com/wklken/gorequest/pull/49
+
+### DOCUMENTATION
+
+- rewrite project README https://github.com/wklken/gorequest/pull/45
+
 ## GoRequest v1.0.1 (2022-02-19)
 
 ### BUGFIXES
@@ -165,4 +187,3 @@ v0.2.1 (2014-07-06)
 v0.2.0 (2014-06-13) - Send is now supporting Struct type as a parameter
 
 v0.1.0 (2014-04-14) - Finished release with enough rich functions to do get, post, json and redirectpolicy
-
