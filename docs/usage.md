@@ -130,6 +130,18 @@ resp, body, errs := gorequest.New().
 When you need explicit helpers, use `SendMap`, `SendStruct`, `SendSlice`,
 `SendBytes`, or `SendString`.
 
+By default, JSON request bodies follow `encoding/json` and escape HTML
+characters. Use `SetJSONOptions` when the peer expects unescaped HTML
+characters in JSON strings:
+
+```go
+resp, body, errs := gorequest.New().
+	SetJSONOptions(gorequest.JSONOptions{DisableHTMLEscape: true}).
+	Post("https://example.com").
+	Send(map[string]string{"html": "<div>ok</div>"}).
+	End()
+```
+
 ## Form, Text, and XML Bodies
 
 Use `Type` to choose a request content type:
