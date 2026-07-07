@@ -410,6 +410,17 @@ resp, body, errs := gorequest.New().
 
 The `GOREQUEST_DEBUG=1` environment variable also enables debug mode.
 
+Dump the current request before sending it:
+
+```go
+request := gorequest.New().
+	Post("https://example.com").
+	Send(`{"name":"gorequest"}`)
+
+dump, err := request.Dump()
+resp, body, errs := request.End()
+```
+
 Generate a curl command for the current request:
 
 ```go
